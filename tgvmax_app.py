@@ -12,17 +12,17 @@ from streamlit_folium import folium_static
 import json
 from config import (
     MIN_DATE, MAX_DATE, DEFAULT_START_TIME, DEFAULT_END_TIME,
-    DEFAULT_ORIGIN, MAX_RANGE_DAYS, DEFAULT_RANGE_DAYS
+    DEFAULT_ORIGIN, MAX_RANGE_DAYS, DEFAULT_RANGE_DAYS, STATIONS, STATIONS_COORDS
 )
 from utils import (
     get_tgvmax_trains, filter_trains_by_time, format_single_trips,
-    calculate_duration, handle_error
+    calculate_duration, handle_error, search_trains, format_duration
 )
 
 # Configuration de la page
 st.set_page_config(
-    page_title="TGV Max Finder",
-    page_icon="🚄",
+    page_title="TGV Max Explorer - L'ami des aventuriers",
+    page_icon="🚅",
     layout="wide",
     menu_items={
         'Get Help': 'mailto:baptiste.cuchet@gmail.com',
@@ -32,8 +32,9 @@ st.set_page_config(
 )
 
 class SearchMode(str, Enum):
-    SINGLE = "Aller simple"
-    ROUND_TRIP = "Aller-retour"
+    ONE_WAY = "🗺️ Mode Exploration (Aller Simple)"
+    ROUND_TRIP = "🔄 Mode Week-end (Aller-Retour)"
+    ALL_DESTINATIONS = "🎯 Mode Chasseur de Trains"
     DATE_RANGE = "Plage de dates"
 
 # Configuration des styles CSS personnalisés
@@ -242,7 +243,7 @@ def find_trips(mode: SearchMode,
             return filter_trains_by_time(df, depart_start, depart_end, is_round_trip=False)
         return df
     
-    elif mode == SearchMode.SINGLE:
+    elif mode == SearchMode.ONE_WAY:
         with st.spinner('Recherche des trains...'):
             trains = get_tgvmax_trains(
                 depart_date.strftime("%Y-%m-%d"),
@@ -264,7 +265,7 @@ def find_trips(mode: SearchMode,
             return filter_trains_by_time(df, depart_start, depart_end, is_round_trip=False)
         return df
     
-    else:  # mode == SearchMode.ROUND_TRIP
+    else:  # mode == SearchMode.ROUND_TRIP or mode == SearchMode.ALL_DESTINATIONS
         with st.spinner('Recherche des trains aller...'):
             outbound_trains = get_tgvmax_trains(
                 depart_date.strftime("%Y-%m-%d"),
@@ -470,10 +471,98 @@ def test_june_dates():
     return june_dates
 
 def main():
+    # En-tête avec style
+    st.markdown("""
+        <h1 style='text-align: center; color: #1d1d1f; font-size: 3.2em; margin-bottom: 0.5em;'>
+            🚅 TGV Max Explorer
+            <br/>
+            <small style='font-size: 0.4em; color: #666;'>L'ami des aventuriers TGV Max</small>
+        </h1>
+        """, unsafe_allow_html=True)
+
+    # Message humoristique et bannière "Work in Progress"
+    st.markdown("""
+        <div style='text-align: center; padding: 1.5rem; margin: 2rem 0; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+            <h3 style='color: #1d1d1f; margin-bottom: 1rem;'>🎯 Notre Mission</h3>
+            <p style='font-size: 1.2em; color: #444; margin-bottom: 1rem;'>
+                <em>Fini de perdre 1h à chercher la destination de ton prochain week-end !</em>
+            </p>
+            <p style='color: #666; font-style: italic;'>
+                Créé par des voyageurs frustrés, pour des voyageurs qui en ont marre de l'app SNCF Connect 😅
+            </p>
+        </div>
+
+        <div style='background-color: #fff3cd; color: #856404; padding: 1rem; border-radius: 10px; margin: 1rem 0; border-left: 5px solid #ffeeba;'>
+            <h4 style='color: #856404; margin-bottom: 0.5rem;'>🚧 Site en développement !</h4>
+            <p>Comme un TGV en rodage, on peaufine encore quelques détails. Mais promis, ça va déjà plus vite que de trouver un Paris-Lyon un vendredi soir ! 😉</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Sélection du mode de recherche
+    search_mode = st.radio(
+        "Choisis ton mode d'exploration 🎯",
+        [SearchMode.ONE_WAY, SearchMode.ROUND_TRIP, SearchMode.ALL_DESTINATIONS],
+        format_func=lambda x: {
+            SearchMode.ONE_WAY: "🗺️ Mode Exploration (Aller Simple)",
+            SearchMode.ROUND_TRIP: "🔄 Mode Week-end (Aller-Retour)",
+            SearchMode.ALL_DESTINATIONS: "🎯 Mode Chasseur de Trains"
+        }[x]
+    )
+
+    # Descriptions des modes avec style amélioré
+    mode_descriptions = {
+        SearchMode.ONE_WAY: """
+            <div style='padding: 2rem; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; margin: 1rem 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+                <h3 style='color: #1d1d1f; margin-bottom: 1rem;'>🗺️ Mode Exploration (Aller Simple)</h3>
+                <p style='font-size: 1.1em; color: #444; margin-bottom: 1rem;'>
+                    Pour les âmes aventurières qui veulent s'évader ! Ce mode te montre TOUTES les destinations possibles depuis ta ville.
+                </p>
+                <ul style='color: #666; list-style-type: none; padding-left: 0;'>
+                    <li style='margin: 0.5rem 0;'>✨ Découvre des destinations que tu n'aurais jamais imaginées</li>
+                    <li style='margin: 0.5rem 0;'>🎯 Parfait pour les décisions spontanées</li>
+                    <li style='margin: 0.5rem 0;'>🌍 Visualise toutes tes options en un clin d'œil</li>
+                </ul>
+                <p style='font-style: italic; color: #666; margin-top: 1rem;'>
+                    Idéal pour les "Tiens, et si j'allais à Bordeaux ce week-end ?" 🤔
+                </p>
+            </div>
+        """,
+        SearchMode.ROUND_TRIP: """
+            <div style='padding: 2rem; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; margin: 1rem 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+                <h3 style='color: #1d1d1f; margin-bottom: 1rem;'>🔄 Mode Week-end (Aller-Retour)</h3>
+                <p style='font-size: 1.1em; color: #444; margin-bottom: 1rem;'>
+                    Pour les planificateurs avisés ! Trouve le combo parfait aller-retour depuis ta ville.
+                </p>
+                <ul style='color: #666; list-style-type: none; padding-left: 0;'>
+                    <li style='margin: 0.5rem 0;'>📅 Choisis tes dates idéales</li>
+                    <li style='margin: 0.5rem 0;'>⚡ Trouve les meilleures correspondances en quelques secondes</li>
+                    <li style='margin: 0.5rem 0;'>🎯 Fini les allers-retours entre les pages de recherche !</li>
+                </ul>
+                <p style='font-style: italic; color: #666; margin-top: 1rem;'>
+                    PS : Si tu trouves un Paris-Lyon un vendredi soir, joue au loto ! 🎲
+                </p>
+            </div>
+        """,
+        SearchMode.ALL_DESTINATIONS: """
+            <div style='padding: 2rem; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; margin: 1rem 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+                <h3 style='color: #1d1d1f; margin-bottom: 1rem;'>🎯 Mode Chasseur de Trains</h3>
+                <p style='font-size: 1.1em; color: #444; margin-bottom: 1rem;'>
+                    Pour les opportunistes et les flexibles ! Explore TOUS les trajets disponibles sur une période.
+                </p>
+                <ul style='color: #666; list-style-type: none; padding-left: 0;'>
+                    <li style='margin: 0.5rem 0;'>🔍 Trouve les pépites que personne n'a vues</li>
+                    <li style='margin: 0.5rem 0;'>📊 Visualise toutes les options d'un coup d'œil</li>
+                    <li style='margin: 0.5rem 0;'>⚡ Idéal pour les voyages de dernière minute</li>
+                </ul>
+                <p style='font-style: italic; color: #666; margin-top: 1rem;'>
+                    Le mode préféré des chasseurs de bonnes occasions ! 🎯
+                </p>
+            </div>
+        """
+    }
+    st.markdown(mode_descriptions[search_mode], unsafe_allow_html=True)
+
     init_session_state()
-    
-    # En-tête stylisé
-    st.markdown('<h1 class="main-header">TGV Max Finder</h1>', unsafe_allow_html=True)
     
     # Calcul simple de la date limite (aujourd'hui + 30 jours)
     latest_date = datetime.now().date() + timedelta(days=30)
@@ -511,15 +600,6 @@ def main():
     # Sidebar pour les filtres
     with st.sidebar:
         st.markdown('<h2 style="color: #1d1d1f; font-size: 24px; margin-bottom: 1.5rem;">Paramètres de recherche</h2>', unsafe_allow_html=True)
-        
-        # Sélection du mode de recherche
-        search_mode = st.radio(
-            "Mode de recherche",
-            options=[mode.value for mode in SearchMode],
-            format_func=lambda x: x,
-            help="Choisissez votre mode de recherche"
-        )
-        search_mode = SearchMode(search_mode)
         
         # Paramètres de recherche selon le mode
         if search_mode == SearchMode.DATE_RANGE:
@@ -566,7 +646,7 @@ def main():
                     value=depart_date + timedelta(days=2)
                 )
         else:
-            if search_mode == SearchMode.SINGLE:
+            if search_mode == SearchMode.ONE_WAY:
                 st.markdown(
                     '<div class="info-box">🎯 Explorez toutes les destinations accessibles</div>',
                     unsafe_allow_html=True
@@ -684,7 +764,7 @@ def main():
             )
             
             # Création d'onglets pour différentes vues
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Vue détaillée", "📈 Résumé par destination", "📈 Statistiques", "⭐ Favoris", "🗺️ Carte"])
+            tab1, tab2, tab3 = st.tabs(["📊 Vue détaillée", "📈 Résumé par destination", "📈 Statistiques"])
             
             with tab1:
                 # Vue détaillée
@@ -719,17 +799,28 @@ def main():
             
             with tab2:
                 # Résumé par destination
-                st.markdown('<h3 style="color: #1d1d1f; font-size: 24px; margin-bottom: 1.5rem;">Résumé par destination</h3>', unsafe_allow_html=True)
+                st.markdown("""
+                    <div style="padding: 1rem;">
+                        <h3 style="color: #1d1d1f; font-size: 24px; margin-bottom: 1.5rem;">📍 Résumé par destination</h3>
+                    </div>
+                """, unsafe_allow_html=True)
+                
                 if search_mode == SearchMode.ROUND_TRIP:
                     destinations = df['Aller_Destination'].unique()
                     for dest in sorted(destinations):
                         dest_trips = df[df['Aller_Destination'] == dest]
-                        with st.expander(f"🎯 {dest} ({len(dest_trips)} trajets)"):
+                        with st.expander(f"🎯 {dest} ({len(dest_trips)} trajets)", expanded=False):
                             for _, trip in dest_trips.iterrows():
                                 st.markdown(
-                                    f"""<div class="trip-card">
-                                        <p><strong>Aller :</strong> {trip['Aller_Heure']} → {trip['Aller_Arrivee']} ({trip['Duree_Aller']})</p>
-                                        <p><strong>Retour :</strong> {trip['Retour_Heure']} → {trip['Retour_Arrivee']} ({trip['Duree_Retour']})</p>
+                                    f"""<div style="background-color: #f8f9fa; border-radius: 10px; padding: 1rem; margin-bottom: 0.5rem;">
+                                        <div style="margin-bottom: 0.5rem;">
+                                            <strong>Aller :</strong> {trip['Aller_Heure']} → {trip['Aller_Arrivee']} 
+                                            <span style="color: #666;">({trip['Duree_Aller']})</span>
+                                        </div>
+                                        <div>
+                                            <strong>Retour :</strong> {trip['Retour_Heure']} → {trip['Retour_Arrivee']} 
+                                            <span style="color: #666;">({trip['Duree_Retour']})</span>
+                                        </div>
                                     </div>""",
                                     unsafe_allow_html=True
                                 )
@@ -737,109 +828,101 @@ def main():
                     destinations = df['destination'].unique()
                     for dest in sorted(destinations):
                         dest_trips = df[df['destination'] == dest]
-                        with st.expander(f"🎯 {dest} ({len(dest_trips)} trajets)"):
+                        with st.expander(f"🎯 {dest} ({len(dest_trips)} trajets)", expanded=False):
                             for _, trip in dest_trips.iterrows():
                                 st.markdown(
-                                    f"""<div class="trip-card">
-                                        <p><strong>{trip['heure_depart']} → {trip['heure_arrivee']}</strong> ({trip['duree']})</p>
-                                        <p class="small-text">Date : {trip['date']}</p>
+                                    f"""<div style="background-color: #f8f9fa; border-radius: 10px; padding: 1rem; margin-bottom: 0.5rem;">
+                                        <div style="font-size: 1.1em; margin-bottom: 0.3rem;">
+                                            {trip['heure_depart']} → {trip['heure_arrivee']}
+                                            <span style="color: #666;">({trip['duree']})</span>
+                                        </div>
+                                        <div style="color: #666; font-size: 0.9em;">
+                                            Date : {trip['date']}
+                                        </div>
                                     </div>""",
                                     unsafe_allow_html=True
                                 )
-            
+
             with tab3:
-                st.markdown('<h3 style="color: #1d1d1f; font-size: 24px; margin-bottom: 1.5rem;">Statistiques des trajets</h3>', unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    if search_mode == SearchMode.ROUND_TRIP:
-                        avg_duration_aller = df['Duree_Aller'].mean() if not df.empty else "N/A"
-                        avg_duration_retour = df['Duree_Retour'].mean() if not df.empty else "N/A"
-                        st.metric("Durée moyenne aller", avg_duration_aller)
-                        st.metric("Durée moyenne retour", avg_duration_retour)
-                    else:
-                        avg_duration = df['duree'].mean() if not df.empty else "N/A"
-                        st.metric("Durée moyenne", avg_duration)
-
-                with col2:
-                    if search_mode == SearchMode.ROUND_TRIP:
-                        n_destinations = len(df['Aller_Destination'].unique()) if not df.empty else 0
-                    else:
-                        n_destinations = len(df['destination'].unique()) if not df.empty else 0
-                    st.metric("Nombre de destinations", n_destinations)
-                    
-                    earliest_departure = df['Aller_Heure'].min() if search_mode == SearchMode.ROUND_TRIP else df['heure_depart'].min() if not df.empty else "N/A"
-                    latest_departure = df['Aller_Heure'].max() if search_mode == SearchMode.ROUND_TRIP else df['heure_depart'].max() if not df.empty else "N/A"
-                    st.metric("Premier départ", earliest_departure)
-                    st.metric("Dernier départ", latest_departure)
-
-                with col3:
-                    if search_mode == SearchMode.ROUND_TRIP:
-                        trips_per_dest = df.groupby('Aller_Destination').size()
-                    else:
-                        trips_per_dest = df.groupby('destination').size() if not df.empty else pd.Series()
-                    
-                    if not trips_per_dest.empty:
-                        most_frequent_dest = trips_per_dest.idxmax()
-                        n_trips_most_frequent = trips_per_dest.max()
-                        st.metric("Destination la plus desservie", f"{most_frequent_dest} ({n_trips_most_frequent} trajets)")
-
-                # Graphique des trajets par heure si pertinent
-                if not df.empty:
-                    st.markdown("### 📈 Répartition des trajets par heure")
-                    if search_mode == SearchMode.ROUND_TRIP:
-                        hour_dist = pd.to_datetime(df['Aller_Heure']).dt.hour.value_counts().sort_index()
-                    else:
-                        hour_dist = pd.to_datetime(df['heure_depart']).dt.hour.value_counts().sort_index()
-                    st.bar_chart(hour_dist)
-
-            with tab4:
-                st.markdown("### ⭐ Gérer mes favoris")
-                if search_mode == SearchMode.ROUND_TRIP:
-                    for _, row in df.iterrows():
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.write(f"🚅 {row['Aller_Origine']} → {row['Aller_Destination']}")
-                        with col2:
-                            fav = {
-                                'origin': row['Aller_Origine'],
-                                'destination': row['Aller_Destination']
-                            }
-                            if fav not in st.session_state.favorites:
-                                if st.button("⭐", key=f"add_{row['Aller_Origine']}_{row['Aller_Destination']}"):
-                                    st.session_state.favorites.append(fav)
-                                    st.rerun()
-                else:
-                    for _, row in df.iterrows():
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.write(f"🚅 {row['origine']} → {row['destination']}")
-                        with col2:
-                            fav = {
-                                'origin': row['origine'],
-                                'destination': row['destination']
-                            }
-                            if fav not in st.session_state.favorites:
-                                if st.button("⭐", key=f"add_{row['origine']}_{row['destination']}"):
-                                    st.session_state.favorites.append(fav)
-                                    st.rerun()
-
-            with tab5:
-                st.markdown("### 🗺️ Visualisation des trajets")
-                if not df.empty:
-                    m = create_route_map(df, search_mode)
-                    folium_static(m)
-                    
-                    st.markdown("""
-                    <div class="info-box">
-                        <h4>📍 Légende</h4>
-                        <p>• 🔵 Gares de départ</p>
-                        <p>• 🟢 Gares d'arrivée</p>
-                        <p>• Les lignes bleues représentent les trajets</p>
-                        <p>• Cliquez sur les marqueurs pour plus d'informations</p>
+                st.markdown("""
+                    <div style="padding: 1rem;">
+                        <h3 style="color: #1d1d1f; font-size: 24px; margin-bottom: 1.5rem;">📊 Statistiques des trajets</h3>
                     </div>
-                    """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+                
+                # Création d'une grille de métriques avec un style amélioré
+                metrics_container = st.container()
+                with metrics_container:
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("""
+                            <div style="background-color: #f8f9fa; border-radius: 10px; padding: 1rem; height: 100%;">
+                                <h4 style="color: #1d1d1f; margin-bottom: 1rem;">⏱️ Durées</h4>
+                        """, unsafe_allow_html=True)
+                        
+                        if search_mode == SearchMode.ROUND_TRIP:
+                            avg_duration_aller = df['Duree_Aller'].mean() if not df.empty else "N/A"
+                            avg_duration_retour = df['Duree_Retour'].mean() if not df.empty else "N/A"
+                            st.metric("Moyenne aller", avg_duration_aller)
+                            st.metric("Moyenne retour", avg_duration_retour)
+                        else:
+                            avg_minutes = df['duree_minutes'].mean() if not df.empty else 0
+                            avg_hours = int(avg_minutes // 60)
+                            avg_mins = int(avg_minutes % 60)
+                            avg_duration = f"{avg_hours}h{avg_mins:02d}" if not df.empty else "N/A"
+                            st.metric("Durée moyenne", avg_duration)
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+                    with col2:
+                        st.markdown("""
+                            <div style="background-color: #f8f9fa; border-radius: 10px; padding: 1rem; height: 100%;">
+                                <h4 style="color: #1d1d1f; margin-bottom: 1rem;">🎯 Destinations</h4>
+                        """, unsafe_allow_html=True)
+                        
+                        if search_mode == SearchMode.ROUND_TRIP:
+                            n_destinations = len(df['Aller_Destination'].unique()) if not df.empty else 0
+                        else:
+                            n_destinations = len(df['destination'].unique()) if not df.empty else 0
+                        st.metric("Nombre total", n_destinations)
+                        
+                        if not df.empty:
+                            if search_mode == SearchMode.ROUND_TRIP:
+                                trips_per_dest = df.groupby('Aller_Destination').size()
+                            else:
+                                trips_per_dest = df.groupby('destination').size()
+                            
+                            most_frequent_dest = trips_per_dest.idxmax()
+                            n_trips_most_frequent = trips_per_dest.max()
+                            st.metric("Plus desservie", f"{most_frequent_dest} ({n_trips_most_frequent})")
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+                    with col3:
+                        st.markdown("""
+                            <div style="background-color: #f8f9fa; border-radius: 10px; padding: 1rem; height: 100%;">
+                                <h4 style="color: #1d1d1f; margin-bottom: 1rem;">🕒 Horaires</h4>
+                        """, unsafe_allow_html=True)
+                        
+                        earliest_departure = df['Aller_Heure'].min() if search_mode == SearchMode.ROUND_TRIP else df['heure_depart'].min() if not df.empty else "N/A"
+                        latest_departure = df['Aller_Heure'].max() if search_mode == SearchMode.ROUND_TRIP else df['heure_depart'].max() if not df.empty else "N/A"
+                        st.metric("Premier départ", earliest_departure)
+                        st.metric("Dernier départ", latest_departure)
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+            # Section des fonctionnalités à venir
+            st.markdown("---")
+            st.markdown("""
+                <div style="background-color: #f5f5f7; padding: 2rem; border-radius: 18px; margin-top: 2rem;">
+                    <h3 style="color: #1d1d1f; margin-bottom: 1rem;">🚧 Fonctionnalités en développement</h3>
+                    <div style="color: #666; font-size: 1.1em;">
+                        <p>Les fonctionnalités suivantes seront bientôt disponibles :</p>
+                        <ul style="list-style-type: none; padding-left: 0;">
+                            <li style="margin: 0.5rem 0;">⭐ <strong>Favoris</strong> - Sauvegardez vos trajets préférés</li>
+                            <li style="margin: 0.5rem 0;">🗺️ <strong>Carte interactive</strong> - Visualisez vos trajets sur une carte</li>
+                        </ul>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
         else:
             # Trouver la date la plus éloignée disponible dans l'API
             future_date = MAX_DATE
