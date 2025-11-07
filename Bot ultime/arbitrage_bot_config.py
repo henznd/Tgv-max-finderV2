@@ -452,7 +452,15 @@ async def execute_simultaneous_trades(config):
             lighter_verification = lighter_result.get('verification')
             
             if lighter_success:
-                if lighter_executed:
+                # Vérifier si une position existe réellement (plus fiable que order_executed)
+                position_found = False
+                if lighter_verification:
+                    position_found = lighter_verification.get('position_found', False)
+                    # Si position_found est True, le trade est exécuté même si order_executed est False
+                    if position_found:
+                        lighter_executed = True
+                
+                if lighter_executed or position_found:
                     logger.info(f"✅ [LIGHTER] Trade réussi ET exécuté confirmé!")
                     logger.info(f"   📊 Statut: {lighter_status}")
                     
@@ -471,7 +479,10 @@ async def execute_simultaneous_trades(config):
                 else:
                     logger.warning(f"⚠️ [LIGHTER] Ordre placé mais NON exécuté (slippage/annulation)")
                     logger.warning(f"   📊 Statut: {lighter_status}")
-                    lighter_success = False
+                    # Ne pas mettre lighter_success à False si le trade a été placé avec succès
+                    # Seulement si vraiment aucune position n'existe
+                    if not position_found:
+                        lighter_success = False
                 logger.debug(f"📋 Sortie Lighter: {lighter_output[-500:]}")
             else:
                 logger.error(f"❌ [LIGHTER] Trade échoué: {lighter_result.get('error', 'Erreur inconnue')}")
@@ -493,7 +504,15 @@ async def execute_simultaneous_trades(config):
             paradex_verification = paradex_result.get('verification')
             
             if paradex_success:
-                if paradex_executed:
+                # Vérifier si une position existe réellement (plus fiable que order_executed)
+                position_found = False
+                if paradex_verification:
+                    position_found = paradex_verification.get('position_found', False)
+                    # Si position_found est True, le trade est exécuté même si order_executed est False
+                    if position_found:
+                        paradex_executed = True
+                
+                if paradex_executed or position_found:
                     logger.info(f"✅ [PARADEX] Trade réussi ET exécuté confirmé!")
                     logger.info(f"   📊 Statut: {paradex_status}")
                     
@@ -512,15 +531,30 @@ async def execute_simultaneous_trades(config):
                 else:
                     logger.warning(f"⚠️ [PARADEX] Ordre placé mais NON exécuté")
                     logger.warning(f"   📊 Statut: {paradex_status}")
-                    paradex_success = False
+                    # Ne pas mettre paradex_success à False si le trade a été placé avec succès
+                    # Seulement si vraiment aucune position n'existe
+                    if not position_found:
+                        paradex_success = False
                 logger.debug(f"📋 Sortie Paradex: {paradex_output[-500:]}")
             else:
                 logger.error(f"❌ [PARADEX] Trade échoué: {paradex_result.get('error', 'Erreur inconnue')}")
                 logger.debug(f"📋 Sortie Paradex: {paradex_output[-500:]}")
         
-        # Résultat global
+        # Résultat global - Vérifier si les positions existent réellement
+        lighter_has_position = False
+        paradex_has_position = False
+        
+        if lighter_verification:
+            lighter_has_position = lighter_verification.get('position_found', False)
+        if paradex_verification:
+            paradex_has_position = paradex_verification.get('position_found', False)
+        
+        # Considérer un trade comme réussi si soit success=True, soit une position existe
+        lighter_final_success = lighter_success or lighter_has_position
+        paradex_final_success = paradex_success or paradex_has_position
+        
         logger.info("=" * 60)
-        if lighter_success and paradex_success:
+        if lighter_final_success and paradex_final_success:
             logger.info("🎉 SUCCÈS: Les deux trades ont été exécutés avec succès!")
             logger.info("✅ Arbitrage exécuté simultanément")
             
@@ -529,13 +563,13 @@ async def execute_simultaneous_trades(config):
                 logger.info(f"   ⚠️ Lighter liquidation: ${lighter_verification.get('liquidation_price'):.2f}")
             if paradex_verification and paradex_verification.get('liquidation_price'):
                 logger.info(f"   ⚠️ Paradex liquidation: ${paradex_verification.get('liquidation_price'):.2f}")
-        elif lighter_success or paradex_success:
+        elif lighter_final_success or paradex_final_success:
             logger.error("=" * 60)
             logger.error("❌ ÉCHEC PARTIEL: Un seul trade a réussi!")
             logger.error("=" * 60)
             logger.error("⚠️ RISQUE CRITIQUE: Position non couverte!")
             logger.error("")
-            if lighter_success:
+            if lighter_final_success:
                 logger.error(f"   ✅ Lighter: OK (position ouverte)")
                 logger.error(f"   ❌ Paradex: ÉCHEC (pas de position)")
                 logger.error("")

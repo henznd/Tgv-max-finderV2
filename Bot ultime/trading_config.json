@@ -4,15 +4,15 @@
     "leverage": 50,
     "margin": 20,
     "order_type": "buy",
-    "market_price": 103864.6,
-    "amount": 0.009630056562137217
+    "market_price": 103459.7,
+    "amount": 0.009665599262321465
   },
   "paradex": {
     "token": "BTC",
     "leverage": 50,
     "margin": 20,
     "order_type": "sell",
-    "market_price": 103818.5,
-    "amount": 0.009630056562137217
+    "market_price": 103399.7,
+    "amount": 0.009671207943543357
   }
 }

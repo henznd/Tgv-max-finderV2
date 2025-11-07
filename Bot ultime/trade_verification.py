@@ -221,14 +221,27 @@ class TradeVerification:
             try:
                 account_summary_before = paradex_client.api_client.fetch_account_summary()
                 if account_summary_before:
+                    # AccountSummary peut être un objet ou un dict
+                    if isinstance(account_summary_before, dict):
+                        total_equity = account_summary_before.get("total_equity")
+                        available_balance = account_summary_before.get("available_balance")
+                        margin_used = account_summary_before.get("margin_used")
+                        unrealized_pnl = account_summary_before.get("unrealized_pnl")
+                    else:
+                        # C'est un objet, utiliser getattr
+                        total_equity = getattr(account_summary_before, 'total_equity', None)
+                        available_balance = getattr(account_summary_before, 'available_balance', None)
+                        margin_used = getattr(account_summary_before, 'margin_used', None)
+                        unrealized_pnl = getattr(account_summary_before, 'unrealized_pnl', None)
+                    
                     result["balance_before"] = {
-                        "total_equity": account_summary_before.get("total_equity"),
-                        "available_balance": account_summary_before.get("available_balance"),
-                        "margin_used": account_summary_before.get("margin_used"),
-                        "unrealized_pnl": account_summary_before.get("unrealized_pnl")
+                        "total_equity": total_equity,
+                        "available_balance": available_balance,
+                        "margin_used": margin_used,
+                        "unrealized_pnl": unrealized_pnl
                     }
-                    self.logger.info(f"   💰 Equity totale: ${account_summary_before.get('total_equity', 'N/A')}")
-                    self.logger.info(f"   💵 Balance disponible: ${account_summary_before.get('available_balance', 'N/A')}")
+                    self.logger.info(f"   💰 Equity totale: ${total_equity or 'N/A'}")
+                    self.logger.info(f"   💵 Balance disponible: ${available_balance or 'N/A'}")
             except Exception as e:
                 self.logger.warning(f"   ⚠️ Impossible de récupérer l'état avant: {e}")
             
@@ -291,11 +304,24 @@ class TradeVerification:
             try:
                 account_summary_after = paradex_client.api_client.fetch_account_summary()
                 if account_summary_after:
+                    # AccountSummary peut être un objet ou un dict
+                    if isinstance(account_summary_after, dict):
+                        total_equity = account_summary_after.get("total_equity")
+                        available_balance = account_summary_after.get("available_balance")
+                        margin_used = account_summary_after.get("margin_used")
+                        unrealized_pnl = account_summary_after.get("unrealized_pnl")
+                    else:
+                        # C'est un objet, utiliser getattr
+                        total_equity = getattr(account_summary_after, 'total_equity', None)
+                        available_balance = getattr(account_summary_after, 'available_balance', None)
+                        margin_used = getattr(account_summary_after, 'margin_used', None)
+                        unrealized_pnl = getattr(account_summary_after, 'unrealized_pnl', None)
+                    
                     result["balance_after"] = {
-                        "total_equity": account_summary_after.get("total_equity"),
-                        "available_balance": account_summary_after.get("available_balance"),
-                        "margin_used": account_summary_after.get("margin_used"),
-                        "unrealized_pnl": account_summary_after.get("unrealized_pnl")
+                        "total_equity": total_equity,
+                        "available_balance": available_balance,
+                        "margin_used": margin_used,
+                        "unrealized_pnl": unrealized_pnl
                     }
                     
                     # Comparer les balances
@@ -320,29 +346,98 @@ class TradeVerification:
         return result
     
     async def _get_lighter_account_state(self) -> Optional[Dict]:
-        """Récupère l'état du compte Lighter via API REST"""
+        """Récupère l'état du compte Lighter via AccountApi"""
         try:
-            async with aiohttp.ClientSession() as session:
-                api_url = f"{LIGHTER_BASE_URL}/api/v1/account/state"
-                params = {
-                    "account_index": LIGHTER_ACCOUNT_INDEX,
-                    "api_key_index": LIGHTER_API_KEY_INDEX
-                }
-                
-                async with session.get(
-                    api_url,
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=10),
-                    ssl=False
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data
-                    else:
-                        self.logger.warning(f"⚠️ API Lighter retourne code {response.status}")
-                        return None
+            from lighter.api.account_api import AccountApi
+            from lighter.api_client import ApiClient
+            import ssl
+            
+            # Créer un client API avec SSL désactivé (comme pour les autres appels)
+            api_client = ApiClient()
+            api_client.configuration.host = LIGHTER_BASE_URL
+            api_client.configuration.ssl_ca_cert = False  # Désactiver la vérification SSL
+            # Configurer le connector aiohttp pour désactiver SSL
+            import aiohttp
+            connector = aiohttp.TCPConnector(ssl=False)
+            api_client.rest_client.pool_manager._connector = connector
+            
+            # Créer l'API Account
+            account_api = AccountApi(api_client)
+            
+            # Récupérer le compte par index
+            self.logger.info(f"📡 Récupération de l'état du compte Lighter (index: {LIGHTER_ACCOUNT_INDEX})...")
+            accounts_response = await account_api.account(by="index", value=str(LIGHTER_ACCOUNT_INDEX))
+            
+            # accounts_response est un DetailedAccounts qui contient une liste accounts
+            account = None
+            if hasattr(accounts_response, 'accounts') and accounts_response.accounts:
+                account = accounts_response.accounts[0]  # Prendre le premier compte
+            elif hasattr(accounts_response, 'account'):
+                account = accounts_response.account
+            else:
+                account = accounts_response
+            
+            if not account:
+                self.logger.warning("⚠️ Aucun compte trouvé dans la réponse")
+                return None
+            
+            # Extraire les informations pertinentes
+            positions = []
+            if hasattr(account, 'positions') and account.positions:
+                for pos in account.positions:
+                    if hasattr(pos, 'base_amount') or hasattr(pos, 'size'):
+                        size = getattr(pos, 'base_amount', getattr(pos, 'size', 0))
+                        if hasattr(size, '__float__'):
+                            size = float(size)
+                        positions.append({
+                            "market_index": getattr(pos, 'market_index', None),
+                            "size": size,
+                            "entry_price": float(getattr(pos, 'entry_price', 0)) if hasattr(pos, 'entry_price') else 0,
+                        })
+            
+            # Récupérer les stats de marge si disponibles
+            # Essayer différents noms d'attributs possibles
+            total_equity = None
+            available_margin = None
+            used_margin = None
+            
+            # Chercher dans account directement
+            if hasattr(account, 'total_equity'):
+                total_equity = float(account.total_equity) if account.total_equity else None
+            if hasattr(account, 'available_margin'):
+                available_margin = float(account.available_margin) if account.available_margin else None
+            if hasattr(account, 'used_margin'):
+                used_margin = float(account.used_margin) if account.used_margin else None
+            
+            # Chercher dans margin_stats si disponible
+            margin_stats = getattr(account, 'margin_stats', None)
+            if margin_stats:
+                if hasattr(margin_stats, 'total_equity'):
+                    total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
+                if hasattr(margin_stats, 'available_margin'):
+                    available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
+                if hasattr(margin_stats, 'used_margin'):
+                    used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
+            
+            result = {
+                "total_equity": total_equity,
+                "available_margin": available_margin,
+                "used_margin": used_margin,
+                "positions": positions
+            }
+            
+            self.logger.info(f"✅ État du compte récupéré: {len(positions)} positions")
+            await api_client.close()
+            
+            return result
+            
+        except ImportError:
+            self.logger.warning("⚠️ AccountApi non disponible, impossible de récupérer l'état")
+            return None
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur récupération état Lighter: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return None
     
     def check_liquidation_risk(

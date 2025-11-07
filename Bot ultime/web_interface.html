@@ -381,14 +381,23 @@
                 body: JSON.stringify(config)
                 });
 
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 const result = await response.json();
                 if (result.success) {
-                    showAlert('Configuration sauvegardée avec succès!', 'success');
+                    showAlert('✅ Configuration sauvegardée avec succès!', 'success');
+                    // Recharger la config pour confirmer
+                    setTimeout(() => loadConfig(), 500);
                 } else {
-                    showAlert('Erreur lors de la sauvegarde: ' + (result.error || 'Erreur inconnue'), 'error');
+                    showAlert('❌ Erreur lors de la sauvegarde: ' + (result.error || 'Erreur inconnue'), 'error');
                 }
             } catch (error) {
-                showAlert('Erreur: ' + error.message, 'error');
+                console.error('Erreur lors de la sauvegarde:', error);
+                // Même en cas d'erreur réseau, la config peut être sauvegardée
+                // Vérifier si le fichier existe en rechargeant
+                showAlert('⚠️ Erreur réseau, mais la configuration peut avoir été sauvegardée. Vérifiez en rechargeant la page.', 'info');
             }
         }
 
@@ -476,9 +485,16 @@
         async function fetchLogs() {
             try {
                 const response = await fetch('/api/logs');
-                const data = await response.json();
                 
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
                 const logsContainer = document.getElementById('logs-container');
+                
+                // Debug: afficher ce qui est reçu
+                console.log('Logs reçus:', data.logs ? data.logs.length : 0, 'lignes');
                 
                 if (data.logs && data.logs.length > 0) {
                     // Prendre les 50 dernières lignes
@@ -492,16 +508,19 @@
                         
                         // Parser le format de log: "2025-11-07 23:00:48 | arbitrage_bot | INFO | ..."
                         let logContent = log;
-                        if (log.includes(' | ')) {
+                        if (typeof log === 'string' && log.includes(' | ')) {
                             const parts = log.split(' | ');
                             if (parts.length >= 4) {
                                 // Prendre tout après le niveau (INFO, ERROR, etc.)
                                 logContent = parts.slice(3).join(' | ');
+                            } else if (parts.length >= 3) {
+                                // Format alternatif: "timestamp | logger | message"
+                                logContent = parts.slice(2).join(' | ');
                             }
                         }
                         
                         // Déterminer le type de log (case insensitive)
-                        const logUpper = log.toUpperCase();
+                        const logUpper = String(log).toUpperCase();
                         if (logUpper.includes('ERROR') || log.includes('❌') || logUpper.includes('ÉCHEC') || logUpper.includes('ERREUR')) {
                             logLine.className += ' log-error';
                         } else if (logUpper.includes('WARNING') || log.includes('⚠️') || logUpper.includes('ATTENTION')) {
@@ -512,7 +531,7 @@
                             logLine.className += ' log-info';
                         }
                         
-                        logLine.textContent = logContent;
+                        logLine.textContent = logContent || log;
                         logsContainer.appendChild(logLine);
                     });
                     
@@ -526,7 +545,9 @@
             } catch (error) {
                 console.error('Erreur lors de la récupération des logs:', error);
                 const logsContainer = document.getElementById('logs-container');
-                logsContainer.innerHTML = `<div class="log-line log-error">Erreur de connexion: ${error.message}</div>`;
+                if (logsContainer) {
+                    logsContainer.innerHTML = `<div class="log-line log-error">Erreur de connexion: ${error.message}</div>`;
+                }
             }
         }
 

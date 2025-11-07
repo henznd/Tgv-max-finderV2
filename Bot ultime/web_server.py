@@ -34,33 +34,53 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
     
     def do_GET(self):
         """Gère les requêtes GET"""
-        parsed_path = urlparse(self.path)
-        
-        if parsed_path.path == '/' or parsed_path.path == '/index.html':
-            self.serve_html()
-        elif parsed_path.path == '/api/config':
-            self.get_config()
-        elif parsed_path.path == '/api/status':
-            self.get_status()
-        elif parsed_path.path == '/api/logs':
-            self.get_logs()
-        elif parsed_path.path == '/api/health':
-            self.get_health()
-        else:
-            self.send_error(404, "Not Found")
+        try:
+            parsed_path = urlparse(self.path)
+            
+            if parsed_path.path == '/' or parsed_path.path == '/index.html':
+                self.serve_html()
+            elif parsed_path.path == '/api/config':
+                self.get_config()
+            elif parsed_path.path == '/api/status':
+                self.get_status()
+            elif parsed_path.path == '/api/logs':
+                self.get_logs()
+            elif parsed_path.path == '/api/health':
+                self.get_health()
+            else:
+                self.send_error(404, "Not Found")
+        except Exception as e:
+            logger.error(f"Erreur dans do_GET: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_error(500, f"Internal Server Error: {str(e)}")
+    
+    def do_OPTIONS(self):
+        """Gère les requêtes OPTIONS pour CORS"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
     
     def do_POST(self):
         """Gère les requêtes POST"""
-        parsed_path = urlparse(self.path)
-        
-        if parsed_path.path == '/api/config':
-            self.save_config()
-        elif parsed_path.path == '/api/launch':
-            self.launch_bot()
-        elif parsed_path.path == '/api/stop':
-            self.stop_bot()
-        else:
-            self.send_error(404, "Not Found")
+        try:
+            parsed_path = urlparse(self.path)
+            
+            if parsed_path.path == '/api/config':
+                self.save_config()
+            elif parsed_path.path == '/api/launch':
+                self.launch_bot()
+            elif parsed_path.path == '/api/stop':
+                self.stop_bot()
+            else:
+                self.send_error(404, "Not Found")
+        except Exception as e:
+            logger.error(f"Erreur dans do_POST: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_error(500, f"Internal Server Error: {str(e)}")
     
     def serve_html(self):
         """Sert le fichier HTML de l'interface"""
@@ -152,32 +172,81 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
     def get_logs(self):
         """Récupère les logs en temps réel"""
         try:
-            # Récupérer les logs du bot d'arbitrage
-            log_dir = os.path.join(os.path.dirname(__file__), 'logs')
-            today = datetime.now().strftime('%Y%m%d')
-            log_file = os.path.join(log_dir, f'arbitrage_bot_{today}.log')
+            # Récupérer les logs du bot d'arbitrage - utiliser le chemin absolu
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            log_dir = os.path.join(script_dir, 'logs')
+            
+            # FORCER l'affichage pour debug
+            print(f"[DEBUG] 📂 Recherche logs dans: {log_dir}", flush=True)
+            logger.info(f"📂 Recherche logs dans: {log_dir}")
+            
+            # Chercher les fichiers de log les plus récents (aujourd'hui et hier)
+            import glob
+            log_pattern = os.path.join(log_dir, 'arbitrage_bot_*.log')
+            log_files = sorted(glob.glob(log_pattern), reverse=True)
+            
+            print(f"[DEBUG] 📁 Fichiers trouvés: {len(log_files)}", flush=True)
+            logger.info(f"📁 Fichiers trouvés: {len(log_files)}")
+            for f in log_files[:3]:
+                size = os.path.getsize(f)
+                print(f"[DEBUG]    - {os.path.basename(f)} ({size} bytes)", flush=True)
+                logger.info(f"   - {os.path.basename(f)} ({size} bytes)")
             
             logs = []
-            if os.path.exists(log_file):
-                # Lire les dernières lignes du fichier
-                try:
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                        # Prendre les 100 dernières lignes
-                        logs = [line.strip() for line in lines[-100:] if line.strip()]
-                except Exception as e:
-                    logger.warning(f"Erreur lecture fichier log: {e}")
-                    logs = [f"Erreur lecture logs: {e}"]
+            if log_files:
+                # Lire les logs des fichiers les plus récents (max 2 derniers jours)
+                all_lines = []
+                for log_file in log_files[:2]:
+                    try:
+                        file_size = os.path.getsize(log_file)
+                        print(f"[DEBUG] 📖 Lecture {os.path.basename(log_file)}: {file_size} bytes", flush=True)
+                        logger.info(f"📖 Lecture {os.path.basename(log_file)}: {file_size} bytes")
+                        if file_size > 0:
+                            with open(log_file, 'r', encoding='utf-8') as f:
+                                lines = f.readlines()
+                                # Filtrer les lignes vides et ajouter seulement celles qui ont du contenu
+                                valid_lines = [line.rstrip('\n\r') for line in lines if line.strip()]
+                                print(f"[DEBUG]    ✅ {len(valid_lines)} lignes valides", flush=True)
+                                logger.info(f"   ✅ {len(valid_lines)} lignes valides")
+                                if valid_lines:
+                                    # Ajouter le nom du fichier comme séparateur si on lit plusieurs fichiers
+                                    if len(log_files) > 1 and log_file != log_files[0] and all_lines:
+                                        all_lines.append(f"--- {os.path.basename(log_file)} ---")
+                                    all_lines.extend(valid_lines)
+                    except Exception as e:
+                        import traceback
+                        logger.error(f"❌ Erreur lecture fichier log {log_file}: {e}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                
+                if all_lines:
+                    # Prendre les 200 dernières lignes au total
+                    logs = all_lines[-200:]
+                    print(f"[DEBUG] 📊 Logs récupérés: {len(logs)} lignes depuis {len(log_files)} fichiers", flush=True)
+                    logger.info(f"📊 Logs récupérés: {len(logs)} lignes depuis {len(log_files)} fichiers")
+                else:
+                    # Vérifier si le fichier d'aujourd'hui existe mais est vide
+                    today = datetime.now().strftime('%Y%m%d')
+                    today_file = os.path.join(log_dir, f'arbitrage_bot_{today}.log')
+                    if os.path.exists(today_file) and os.path.getsize(today_file) == 0:
+                        logs = ["⚠️ Le fichier de log d'aujourd'hui existe mais est vide. Le bot est peut-être en cours d'exécution..."]
+                    else:
+                        logs = ["ℹ️ Aucun log disponible pour le moment."]
+                    logger.warning(f"⚠️ Aucune ligne valide trouvée dans les fichiers de log")
             else:
-                logs = ["Aucun fichier de log trouvé pour aujourd'hui"]
+                logs = ["ℹ️ Aucun fichier de log trouvé. Le bot n'a peut-être pas encore été lancé."]
+                logger.warning("⚠️ Aucun fichier de log trouvé")
             
+            print(f"[DEBUG] 📤 Envoi de {len(logs)} lignes de logs au client", flush=True)
+            logger.info(f"📤 Envoi de {len(logs)} lignes de logs au client")
             self.send_json_response({
                 "logs": logs,
                 "timestamp": datetime.now().isoformat()
             })
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération des logs: {e}")
-            self.send_json_response({"error": str(e)}, status=500)
+            logger.error(f"❌ Erreur lors de la récupération des logs: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_json_response({"error": str(e), "logs": []}, status=500)
     
     def get_health(self):
         """Récupère l'état de santé du compte"""
@@ -198,8 +267,16 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-type', 'application/json; charset=utf-8')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+        try:
+            json_data = json.dumps(data, ensure_ascii=False, default=str)
+            self.wfile.write(json_data.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Erreur sérialisation JSON: {e}")
+            error_data = json.dumps({"error": "Erreur de sérialisation", "details": str(e)}, ensure_ascii=False)
+            self.wfile.write(error_data.encode('utf-8'))
     
     def log_message(self, format, *args):
         """Override pour utiliser notre logger"""
@@ -241,9 +318,17 @@ async def get_health_async():
                 "positions": positions_info
             }
         else:
-            health_data["lighter"] = {"status": "error", "error": "Impossible de récupérer l'état"}
+            health_data["lighter"] = {
+                "status": "error", 
+                "error": "L'API Lighter ne fournit pas d'endpoint public pour récupérer l'état du compte (positions, balances). Vérifiez votre compte directement sur l'interface Lighter."
+            }
     except Exception as e:
-        health_data["lighter"] = {"status": "error", "error": str(e)}
+        import traceback
+        error_msg = str(e)
+        # Si c'est une erreur de connexion, donner plus de détails
+        if "Connection" in error_msg or "timeout" in error_msg.lower():
+            error_msg = f"Erreur de connexion à l'API Lighter: {error_msg}"
+        health_data["lighter"] = {"status": "error", "error": error_msg}
     
     # Récupérer l'état Paradex
     try:
@@ -272,11 +357,27 @@ async def get_health_async():
                             "liquidation_price": float(pos.get('liquidation_price') or pos.get('liquidationPrice') or 0)
                         })
         
+        # AccountSummary peut être un objet ou un dict, gérer les deux cas
+        total_equity = None
+        available_balance = None
+        margin_used = None
+        
+        if account_summary:
+            if isinstance(account_summary, dict):
+                total_equity = account_summary.get("total_equity")
+                available_balance = account_summary.get("available_balance")
+                margin_used = account_summary.get("margin_used")
+            else:
+                # C'est un objet, utiliser getattr
+                total_equity = getattr(account_summary, 'total_equity', None)
+                available_balance = getattr(account_summary, 'available_balance', None)
+                margin_used = getattr(account_summary, 'margin_used', None)
+        
         health_data["paradex"] = {
             "status": "ok",
-            "total_equity": account_summary.get("total_equity") if account_summary else None,
-            "available_balance": account_summary.get("available_balance") if account_summary else None,
-            "margin_used": account_summary.get("margin_used") if account_summary else None,
+            "total_equity": total_equity,
+            "available_balance": available_balance,
+            "margin_used": margin_used,
             "positions_count": len(positions_info),
             "positions": positions_info
         }
@@ -290,11 +391,34 @@ def run_bot_async():
     global bot_running
     
     try:
+        # S'assurer que le logger est initialisé dans ce thread
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot")
+        bot_logger.info("=" * 60)
+        bot_logger.info("🤖 BOT D'ARBITRAGE - DÉMARRAGE")
+        bot_logger.info("=" * 60)
+        
         # Exécuter le bot
         result = asyncio.run(execute_simultaneous_trades(load_config()))
-        logger.info(f"Bot terminé: {result}")
+        bot_logger.info(f"Bot terminé: {result}")
+        
+        # Forcer le flush des logs
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
+        for handler in bot_logger.handlers:
+            if hasattr(handler, 'stream') and handler.stream:
+                handler.stream.flush()
     except Exception as e:
-        logger.error(f"Erreur lors de l'exécution du bot: {e}")
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot")
+        bot_logger.error(f"Erreur lors de l'exécution du bot: {e}")
+        import traceback
+        bot_logger.error(traceback.format_exc())
+        # Forcer le flush
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
     finally:
         bot_running = False
 
