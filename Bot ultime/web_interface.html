@@ -353,7 +353,682 @@
             const token = document.getElementById('token').value;
             const leverage = parseInt(document.getElementById('leverage').value);
             const positionSize = parseFloat(document.getElementById('position-size').value);
+
+            // Calculer la marge à partir de la position totale: margin = position_size / leverage
+            const margin = positionSize / leverage;
+
+            const config = {
+                lighter: {
+                    token: token,
+                    leverage: leverage,
+                    margin: margin,
+                    order_type: "buy"
+                },
+                paradex: {
+                    token: token,
+                    leverage: leverage,
+                    margin: margin,
+                    order_type: "sell"
+                }
+            };
+
+            try {
+                const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('✅ Configuration sauvegardée avec succès!', 'success');
+                    // Recharger la config pour confirmer
+                    setTimeout(() => loadConfig(), 500);
+                } else {
+                    showAlert('❌ Erreur lors de la sauvegarde: ' + (result.error || 'Erreur inconnue'), 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors de la sauvegarde:', error);
+                // Même en cas d'erreur réseau, la config peut être sauvegardée
+                // Vérifier si le fichier existe en rechargeant
+                showAlert('⚠️ Erreur réseau, mais la configuration peut avoir été sauvegardée. Vérifiez en rechargeant la page.', 'info');
+            }
+        }
+
+        // Lancer le bot
+        async function launchBot() {
+            // Confirmation avant de lancer
+            if (!confirm('🚀 Êtes-vous sûr de vouloir lancer le bot d\'arbitrage ?\n\nCette action va exécuter des trades réels sur Lighter et Paradex.')) {
+                return;
+            }
             
+            try {
+                const btnLaunch = document.getElementById('btn-launch');
+                btnLaunch.disabled = true;
+                btnLaunch.textContent = '⏳ Lancement...';
+                
+                const response = await fetch('/api/launch', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('✅ Bot lancé avec succès! Les trades sont en cours d\'exécution.', 'success');
+                    checkStatus();
+                    // Rafraîchir les logs immédiatement
+                    fetchLogs();
+                } else {
+                    showAlert('❌ Erreur: ' + (result.error || 'Erreur inconnue'), 'error');
+                    btnLaunch.disabled = false;
+                    btnLaunch.textContent = '🚀 Lancer le bot';
+                }
+            } catch (error) {
+                showAlert('❌ Erreur: ' + error.message, 'error');
+                const btnLaunch = document.getElementById('btn-launch');
+                btnLaunch.disabled = false;
+                btnLaunch.textContent = '🚀 Lancer le bot';
+            }
+        }
+
+        // Arrêter le bot
+        async function stopBot() {
+            try {
+                const response = await fetch('/api/stop', {
+                method: 'POST'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Arrêt du bot demandé', 'info');
+                    checkStatus();
+                } else {
+                    showAlert('Erreur: ' + (result.error || 'Erreur inconnue'), 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Vérifier le statut
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const status = await response.json();
+                
+                const statusBadge = document.getElementById('bot-status');
+                const btnLaunch = document.getElementById('btn-launch');
+                const btnStop = document.getElementById('btn-stop');
+                
+                if (status.running) {
+                    statusBadge.textContent = 'En cours d\'exécution';
+                    statusBadge.className = 'status-badge status-running';
+                    btnLaunch.disabled = true;
+                    btnStop.disabled = false;
+                } else {
+                    statusBadge.textContent = 'Arrêté';
+                    statusBadge.className = 'status-badge status-stopped';
+                    btnLaunch.disabled = false;
+                    btnStop.disabled = true;
+                }
+            } catch (error) {
+                console.error('Erreur lors de la vérification du statut:', error);
+            }
+        }
+
+        // Récupérer les logs
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const logsContainer = document.getElementById('logs-container');
+                
+                // Debug: afficher ce qui est reçu
+                console.log('Logs reçus:', data.logs ? data.logs.length : 0, 'lignes');
+                
+                if (data.logs && data.logs.length > 0) {
+                    // Prendre les 50 dernières lignes
+                    const newLogs = data.logs.slice(-50);
+                    
+                    logsContainer.innerHTML = '';
+                    
+                    newLogs.forEach(log => {
+                        const logLine = document.createElement('div');
+                        logLine.className = 'log-line';
+                        
+                        // Parser le format de log: "2025-11-07 23:00:48 | arbitrage_bot | INFO | ..."
+                        let logContent = log;
+                        if (typeof log === 'string' && log.includes(' | ')) {
+                            const parts = log.split(' | ');
+                            if (parts.length >= 4) {
+                                // Prendre tout après le niveau (INFO, ERROR, etc.)
+                                logContent = parts.slice(3).join(' | ');
+                            } else if (parts.length >= 3) {
+                                // Format alternatif: "timestamp | logger | message"
+                                logContent = parts.slice(2).join(' | ');
+                            }
+                        }
+                        
+                        // Déterminer le type de log (case insensitive)
+                        const logUpper = String(log).toUpperCase();
+                        if (logUpper.includes('ERROR') || log.includes('❌') || logUpper.includes('ÉCHEC') || logUpper.includes('ERREUR')) {
+                            logLine.className += ' log-error';
+                        } else if (logUpper.includes('WARNING') || log.includes('⚠️') || logUpper.includes('ATTENTION')) {
+                            logLine.className += ' log-warning';
+                        } else if (logUpper.includes('SUCCESS') || log.includes('✅') || logUpper.includes('SUCCÈS')) {
+                            logLine.className += ' log-success';
+                        } else {
+                            logLine.className += ' log-info';
+                        }
+                        
+                        logLine.textContent = logContent || log;
+                        logsContainer.appendChild(logLine);
+                    });
+                    
+                    // Scroll vers le bas
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                } else if (data.error) {
+                    logsContainer.innerHTML = `<div class="log-line log-error">Erreur: ${data.error}</div>`;
+                } else {
+                    logsContainer.innerHTML = '<div class="log-line log-info">Aucun log disponible pour le moment</div>';
+                }
+            } catch (error) {
+                console.error('Erreur lors de la récupération des logs:', error);
+                const logsContainer = document.getElementById('logs-container');
+                if (logsContainer) {
+                    logsContainer.innerHTML = `<div class="log-line log-error">Erreur de connexion: ${error.message}</div>`;
+                }
+            }
+        }
+
+        // Récupérer l'état de santé
+        async function refreshHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const health = await response.json();
+                
+                // Afficher l'état Lighter
+                const lighterHealth = document.getElementById('lighter-health');
+                if (health.lighter) {
+                    if (health.lighter.status === 'ok') {
+                        let positionsHtml = '';
+                        if (health.lighter.positions && health.lighter.positions.length > 0) {
+                            positionsHtml = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e9ecef;"><strong>Positions:</strong>';
+                            health.lighter.positions.forEach(pos => {
+                                const token = pos.market_index === 0 ? 'ETH' : pos.market_index === 1 ? 'BTC' : pos.market_index === 2 ? 'SOL' : `Market ${pos.market_index}`;
+                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${token}:</span> <strong>${pos.size > 0 ? '+' : ''}${pos.size.toFixed(4)}</strong> @ $${pos.entry_price.toFixed(2)}</div>`;
+                            });
+                            positionsHtml += '</div>';
+                        }
+                        
+                        lighterHealth.innerHTML = `
+                            <div class="health-item"><span class="health-label">État:</span><span class="health-value" style="color: #2ecc71;">✅ OK</span></div>
+                            <div class="health-item"><span class="health-label">Equity totale:</span><span class="health-value">$${health.lighter.total_equity?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Marge disponible:</span><span class="health-value">$${health.lighter.available_margin?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Marge utilisée:</span><span class="health-value">$${health.lighter.used_margin?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Positions ouvertes:</span><span class="health-value">${health.lighter.positions_count || 0}</span></div>
+                            ${positionsHtml}
+                        `;
+                    } else {
+                        lighterHealth.innerHTML = `<div class="health-item"><span class="health-label">État:</span><span class="health-value" style="color: #e74c3c;">❌ ${health.lighter.error || 'Erreur'}</span></div>`;
+                    }
+                } else {
+                    lighterHealth.innerHTML = '<div class="health-item"><span class="health-label">État:</span><span class="health-value">Chargement...</span></div>';
+                }
+                
+                // Afficher l'état Paradex
+                const paradexHealth = document.getElementById('paradex-health');
+                if (health.paradex) {
+                    if (health.paradex.status === 'ok') {
+                        let positionsHtml = '';
+                        if (health.paradex.positions && health.paradex.positions.length > 0) {
+                            positionsHtml = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e9ecef;"><strong>Positions:</strong>';
+                            health.paradex.positions.forEach(pos => {
+                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${pos.market}:</span> <strong>${pos.size > 0 ? '+' : ''}${pos.size.toFixed(4)}</strong> @ $${pos.entry_price.toFixed(2)}`;
+                                if (pos.liquidation_price) {
+                                    positionsHtml += ` <span style="color: #e74c3c;">(Liquidation: $${pos.liquidation_price.toFixed(2)})</span>`;
+                                }
+                                positionsHtml += '</div>';
+                            });
+                            positionsHtml += '</div>';
+                        }
+                        
+                        paradexHealth.innerHTML = `
+                            <div class="health-item"><span class="health-label">État:</span><span class="health-value" style="color: #2ecc71;">✅ OK</span></div>
+                            <div class="health-item"><span class="health-label">Equity totale:</span><span class="health-value">$${health.paradex.total_equity?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Balance disponible:</span><span class="health-value">$${health.paradex.available_balance?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Marge utilisée:</span><span class="health-value">$${health.paradex.margin_used?.toFixed(2) || 'N/A'}</span></div>
+                            <div class="health-item"><span class="health-label">Positions ouvertes:</span><span class="health-value">${health.paradex.positions_count || 0}</span></div>
+                            ${positionsHtml}
+                        `;
+                    } else if (health.paradex.status === 'not_available') {
+                        paradexHealth.innerHTML = '<div class="health-item"><span class="health-label">État:</span><span class="health-value">⚠️ Non disponible</span></div>';
+                    } else {
+                        paradexHealth.innerHTML = `<div class="health-item"><span class="health-label">État:</span><span class="health-value" style="color: #e74c3c;">❌ ${health.paradex.error || 'Erreur'}</span></div>`;
+                    }
+                } else {
+                    paradexHealth.innerHTML = '<div class="health-item"><span class="health-label">État:</span><span class="health-value">Chargement...</span></div>';
+                }
+            } catch (error) {
+                console.error('Erreur lors de la récupération de l\'état:', error);
+            }
+        }
+
+        // Démarrer le polling des logs
+        function startLogsPolling() {
+            fetchLogs();
+            logsInterval = setInterval(fetchLogs, 2000); // Toutes les 2 secondes
+        }
+
+        // Démarrer le polling de l'état de santé
+        function startHealthPolling() {
+            refreshHealth();
+            healthInterval = setInterval(refreshHealth, 10000); // Toutes les 10 secondes
+        }
+
+        // Démarrer le polling du statut
+        function startStatusPolling() {
+            checkStatus();
+            statusInterval = setInterval(checkStatus, 3000); // Toutes les 3 secondes
+        }
+
+        // Afficher une alerte
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        // Mettre à jour la marge automatiquement
+        document.getElementById('position-size').addEventListener('input', function() {
+            const positionSize = parseFloat(this.value);
+            const leverage = parseInt(document.getElementById('leverage').value);
+            const margin = positionSize / leverage;
+            document.getElementById('margin').value = Math.round(margin * 100) / 100;
+        });
+
+        document.getElementById('leverage').addEventListener('input', function() {
+            const positionSize = parseFloat(document.getElementById('position-size').value);
+            const leverage = parseInt(this.value);
+            const margin = positionSize / leverage;
+            document.getElementById('margin').value = Math.round(margin * 100) / 100;
+        });
+    </script>
+</body>
+</html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Bot d'Arbitrage - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .main-content {
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px solid #e9ecef;
+        }
+
+        .panel.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .panel h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .status-running {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .status-stopped {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .logs-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 10px;
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .log-line {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+
+        .log-info { color: #4ec9b0; }
+        .log-warning { color: #dcdcaa; }
+        .log-error { color: #f48771; }
+        .log-success { color: #4ec9b0; }
+
+        .health-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .health-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            border: 2px solid #e9ecef;
+        }
+
+        .health-card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .health-item {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .health-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .health-value {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Bot d'Arbitrage - Dashboard</h1>
+            <p>Interface de contrôle et monitoring</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Configuration -->
+            <div class="panel">
+                <h2>⚙️ Configuration</h2>
+                <div id="alert-container"></div>
+                    
+                    <div class="form-group">
+                    <label for="token">Token à trader</label>
+                    <select id="token">
+                        <option value="BTC" selected>BTC</option>
+                        <option value="ETH">ETH</option>
+                        <option value="SOL">SOL</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                    <label for="leverage">Levier</label>
+                    <input type="number" id="leverage" value="10" min="1" max="100" step="1">
+                    </div>
+
+                    <div class="form-group">
+                    <label for="position-size">Taille de position (USD)</label>
+                    <input type="number" id="position-size" value="1000" min="100" step="100">
+                    </div>
+
+                    <div class="form-group">
+                    <label for="margin">Marge (USD)</label>
+                    <input type="number" id="margin" value="100" min="10" step="10">
+                    <small style="color: #6c757d;">Marge = Position / Levier</small>
+                </div>
+
+                <button class="btn btn-primary" onclick="saveConfig()">💾 Sauvegarder</button>
+            </div>
+
+            <!-- Contrôles -->
+            <div class="panel">
+                <h2>🎮 Contrôles</h2>
+                <div style="margin-bottom: 20px;">
+                    <strong>Statut:</strong> 
+                    <span id="bot-status" class="status-badge status-stopped">Arrêté</span>
+                    </div>
+
+                <button class="btn btn-primary" id="btn-launch" onclick="launchBot()">🚀 Lancer le bot</button>
+                <button class="btn btn-danger" id="btn-stop" onclick="stopBot()" disabled>🛑 Arrêter</button>
+                
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" onclick="refreshHealth()">🔄 Actualiser l'état</button>
+                        </div>
+                    </div>
+
+            <!-- État de santé -->
+            <div class="panel full-width">
+                <h2>💚 État de santé du compte</h2>
+                <div id="health-container" class="health-grid">
+                    <div class="health-card">
+                        <h3>⚡ Lighter</h3>
+                        <div id="lighter-health">Chargement...</div>
+                    </div>
+                    <div class="health-card">
+                        <h3>🎯 Paradex</h3>
+                        <div id="paradex-health">Chargement...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div class="panel full-width">
+                <h2>📋 Logs en temps réel</h2>
+                <div class="logs-container" id="logs-container">
+                    <div class="log-line log-info">En attente des logs...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let logsInterval = null;
+        let healthInterval = null;
+        let statusInterval = null;
+
+        // Charger la configuration au démarrage
+        window.onload = function() {
+            loadConfig();
+            checkStatus();
+            startLogsPolling();
+            startHealthPolling();
+            startStatusPolling();
+        };
+
+        // Charger la configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                if (config.lighter) {
+                    document.getElementById('token').value = config.lighter.token || 'BTC';
+                    document.getElementById('leverage').value = config.lighter.leverage || 10;
+                    document.getElementById('margin').value = config.lighter.margin || 100;
+                    
+                    // Calculer la taille de position
+                    const positionSize = (config.lighter.margin || 100) * (config.lighter.leverage || 10);
+                    document.getElementById('position-size').value = positionSize;
+                } else {
+                    // Valeurs par défaut si pas de config
+                    document.getElementById('token').value = 'BTC';
+                    document.getElementById('leverage').value = 10;
+                    document.getElementById('margin').value = 100;
+                    document.getElementById('position-size').value = 1000;
+                }
+            } catch (error) {
+                console.error('Erreur lors du chargement de la config:', error);
+            }
+        }
+
+        // Sauvegarder la configuration
+        async function saveConfig() {
+            const token = document.getElementById('token').value;
+            const leverage = parseInt(document.getElementById('leverage').value);
+            const positionSize = parseFloat(document.getElementById('position-size').value);
+
             // Calculer la marge à partir de la position totale: margin = position_size / leverage
             const margin = positionSize / leverage;
 
