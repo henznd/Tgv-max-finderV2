@@ -1,0 +1,6 @@
+# Dependencies for Lighter DEX (Python 3.9)
+lighter-sdk
+
+# Dependencies for Paradex DEX (Python 3.11)
+paradex-py
+starknet-py

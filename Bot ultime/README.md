@@ -1,0 +1,52 @@
+# Trading Bot - Lighter & Paradex DEX
+
+Scripts fonctionnels pour trader sur Lighter et Paradex DEX.
+
+## 🚀 Scripts Disponibles
+
+### Lighter DEX
+- **Script** : `lighter/lighter_trader.py`
+- **Python** : 3.9 (`/usr/bin/python3`)
+- **Trade** : BTC avec levier 10x
+- **Status** : ✅ Fonctionnel
+
+### Paradex DEX  
+- **Script** : `paradex/paradex_trader.py`
+- **Python** : 3.11 (`python3.11`)
+- **Trade** : ETH avec levier 50x
+- **Status** : ✅ Fonctionnel
+
+## 📋 Utilisation
+
+### Lighter DEX
+```bash
+/usr/bin/python3 lighter/lighter_trader.py
+```
+
+### Paradex DEX
+```bash
+python3.11 paradex/paradex_trader.py
+```
+
+## ⚙️ Configuration
+
+Les scripts utilisent les clés configurées dans les fichiers :
+- Lighter : Clés hardcodées dans le script
+- Paradex : Clés hardcodées dans le script
+
+## 📊 Tests Réussis
+
+- ✅ Lighter : Trade BTC 0.00001 (~$10) avec levier 10x
+- ✅ Paradex : Trade ETH 0.03 (~$134) avec levier 50x
+
+## 🔧 Installation
+
+### Pour Lighter (Python 3.9)
+```bash
+/usr/bin/python3 -m pip install lighter-sdk
+```
+
+### Pour Paradex (Python 3.11)
+```bash
+python3.11 -m pip install paradex-py starknet-py
+```

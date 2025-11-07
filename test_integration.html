@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Intégration TGV Max</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .destination { background: white; border: 1px solid #ddd; margin: 10px 0; padding: 15px; border-radius: 8px; }
+        .train { background: #f9f9f9; margin: 5px 0; padding: 10px; border-radius: 5px; }
+        .header { background: linear-gradient(to right, #3b82f6, #8b5cf6); color: white; padding: 15px; border-radius: 8px 8px 0 0; }
+    </style>
+</head>
+<body>
+    <h1>Test Intégration TGV Max</h1>
+    <button onclick="testIntegration()">Tester l'intégration complète</button>
+    <div id="result"></div>
+
+    <script>
+        async function testIntegration() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="result">Test en cours...</div>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/trains/single?date=2025-07-02&origin=PARIS');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                let html = `
+                    <div class="result success">
+                        <h3>✅ Intégration réussie !</h3>
+                        <p>Nombre de destinations trouvées: ${data.length}</p>
+                    </div>
+                `;
+                
+                // Afficher les destinations groupées comme dans le frontend
+                data.slice(0, 3).forEach((destination, index) => {
+                    html += `
+                        <div class="destination">
+                            <div class="header">
+                                <h3>${destination.destination}</h3>
+                                <p>${destination.count} trajet${destination.count > 1 ? 's' : ''} disponible${destination.count > 1 ? 's' : ''}</p>
+                            </div>
+                            <div style="padding: 15px;">
+                                ${destination.trains.slice(0, 3).map(train => `
+                                    <div class="train">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div>
+                                                <strong>${train.origine}</strong>
+                                                <br><small>Départ</small>
+                                            </div>
+                                            <div style="text-align: center;">
+                                                <div style="width: 50px; height: 2px; background: #ddd; position: relative;">
+                                                    <div style="position: absolute; top: -3px; left: 0; width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></div>
+                                                    <div style="position: absolute; top: -3px; right: 0; width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></div>
+                                                </div>
+                                                <small style="color: #666;">${train.duree}</small>
+                                            </div>
+                                            <div style="text-align: right;">
+                                                <strong>${train.destination}</strong>
+                                                <br><small>Arrivée</small>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
+                                            <div style="text-align: center;">
+                                                <div style="font-size: 18px; font-weight: bold; color: #3b82f6;">${train.heure_depart}</div>
+                                                <small style="color: #666;">Départ</small>
+                                            </div>
+                                            <div style="text-align: center;">
+                                                <div style="font-size: 18px; font-weight: bold; color: #10b981;">${train.heure_arrivee}</div>
+                                                <small style="color: #666;">Arrivée</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                                ${destination.trains.length > 3 ? `<p style="text-align: center; color: #666;">+${destination.trains.length - 3} autres trains</p>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Erreur d'intégration</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 

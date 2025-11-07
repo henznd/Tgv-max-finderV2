@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arbitrage Calculator - Démo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Arbitrage Calculator - Démo</h1>
+        
+        <form id="arbitrageForm">
+            <div class="form-group">
+                <label for="victoryOdds">Cote Victoire:</label>
+                <input type="number" id="victoryOdds" step="0.01" min="1.01" value="2.5" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="drawOdds">Cote Match nul:</label>
+                <input type="number" id="drawOdds" step="0.01" min="1.01" value="3.2" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="defeatOdds">Cote Défaite:</label>
+                <input type="number" id="defeatOdds" step="0.01" min="1.01" value="2.8" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="freebetAmount">Montant Freebet (€):</label>
+                <input type="number" id="freebetAmount" step="0.01" min="0" value="100" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="cashAmount">Montant Cash (€):</label>
+                <input type="number" id="cashAmount" step="0.01" min="0" value="100" required>
+            </div>
+            
+            <button type="submit">🧮 Calculer l'arbitrage</button>
+        </form>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function calculateArbitrage(input) {
+            const { victoryOdds: C1, drawOdds: C2, defeatOdds: C3, freebetAmount: F, cashAmount: R } = input;
+
+            if (C1 <= 1 || C2 <= 1 || C3 <= 1) {
+                return { error: "Toutes les cotes doivent être supérieures à 1" };
+            }
+            if (F < 0 || R < 0) {
+                return { error: "Les montants ne peuvent pas être négatifs" };
+            }
+
+            // Nouvelle logique : répartir cash ET freebet sur les 3 issues pour garantir le même gain final
+            const a1 = C1 - 1;
+            const a2 = C2 - 1;
+            const a3 = C3 - 1;
+
+            // Gain garanti par le cash seul
+            const cashGain = R / (1 / C1 + 1 / C2 + 1 / C3);
+            // Gain garanti par les freebets seuls
+            const freebetGain = F / (1 / a1 + 1 / a2 + 1 / a3);
+            // Gain garanti total
+            const G = cashGain + freebetGain;
+
+            // Répartition du cash
+            const cashDistribution = {
+                victory: cashGain / C1,
+                draw: cashGain / C2,
+                defeat: cashGain / C3,
+            };
+            // Répartition des freebets
+            const freebetDistribution = {
+                victory: freebetGain / a1,
+                draw: freebetGain / a2,
+                defeat: freebetGain / a3,
+            };
+            // Correction pour éviter NaN si a1, a2, a3 = 0 (cote = 1)
+            for (const k of ["victory", "draw", "defeat"]) {
+                if (!isFinite(freebetDistribution[k])) {
+                    freebetDistribution[k] = 0;
+                }
+                if (!isFinite(cashDistribution[k])) {
+                    cashDistribution[k] = 0;
+                }
+            }
+
+            const totalInvestment = R;
+            const roi = totalInvestment > 0 ? ((G - totalInvestment) / totalInvestment) * 100 : 0;
+
+            return {
+                freebetDistribution,
+                cashDistribution,
+                guaranteedProfit: G,
+                totalInvestment,
+                roi
+            };
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('fr-FR', {
+                style: 'currency',
+                currency: 'EUR',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount);
+        }
+
+        document.getElementById('arbitrageForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const input = {
+                victoryOdds: parseFloat(document.getElementById('victoryOdds').value),
+                drawOdds: parseFloat(document.getElementById('drawOdds').value),
+                defeatOdds: parseFloat(document.getElementById('defeatOdds').value),
+                freebetAmount: parseFloat(document.getElementById('freebetAmount').value),
+                cashAmount: parseFloat(document.getElementById('cashAmount').value)
+            };
+
+            const result = calculateArbitrage(input);
+            const resultDiv = document.getElementById('result');
+
+            if (result.error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<h3>❌ Erreur</h3><p>${result.error}</p>`;
+            } else {
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = `
+                    <h3>🎯 Résultats de l'arbitrage</h3>
+                    <p><strong>Gain garanti (quel que soit le résultat) :</strong> ${formatCurrency(result.guaranteedProfit)}</p>
+                    <p><strong>Investissement cash :</strong> ${formatCurrency(result.totalInvestment)}</p>
+                    <p><strong>Profit net :</strong> ${formatCurrency(result.guaranteedProfit - result.totalInvestment)}</p>
+                    <p><strong>ROI :</strong> ${result.roi.toFixed(2)}%</p>
+                    
+                    <h4>🎁 Répartition des freebets :</h4>
+                    <ul>
+                        <li>Victoire : ${formatCurrency(result.freebetDistribution.victory)}</li>
+                        <li>Match nul : ${formatCurrency(result.freebetDistribution.draw)}</li>
+                        <li>Défaite : ${formatCurrency(result.freebetDistribution.defeat)}</li>
+                    </ul>
+                    
+                    <h4>💶 Répartition du cash :</h4>
+                    <ul>
+                        <li>Victoire : ${formatCurrency(result.cashDistribution.victory)}</li>
+                        <li>Match nul : ${formatCurrency(result.cashDistribution.draw)}</li>
+                        <li>Défaite : ${formatCurrency(result.cashDistribution.defeat)}</li>
+                    </ul>
+                    
+                    <p><em>Avec cette répartition, vous gagnez la même somme quoi qu'il arrive, en profitant au maximum des freebets (gratuits) pour booster le gain garanti.</em></p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html> 
