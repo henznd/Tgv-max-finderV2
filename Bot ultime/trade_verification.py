@@ -491,17 +491,6 @@ class TradeVerification:
         else:
             return True, f"✅ Santé: Health factor {health_factor:.2f} ≥ 2 (sain)"
 
-
-Module de vérification complète des trades
-Vérifie l'exécution, les balances, les positions et les niveaux de liquidation
-"""
-
-import asyncio
-import aiohttp
-from typing import Dict, Optional, Tuple
-from decimal import Decimal
-from logger import setup_logger
-
 logger = setup_logger("trade_verification")
 
 # ========== CONFIGURATION LIGHTER ==========

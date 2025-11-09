@@ -1,52 +1,52 @@
-# Trading Bot - Lighter & Paradex DEX
+# Bot d'Arbitrage - Lighter & Paradex
 
-Scripts fonctionnels pour trader sur Lighter et Paradex DEX.
+Bot d'arbitrage pour trader simultanément sur Lighter et Paradex.
 
-## 🚀 Scripts Disponibles
+## 📁 Structure du projet
 
-### Lighter DEX
-- **Script** : `lighter/lighter_trader.py`
-- **Python** : 3.9 (`/usr/bin/python3`)
-- **Trade** : BTC avec levier 10x
-- **Status** : ✅ Fonctionnel
+### Bot d'arbitrage
+- `arbitrage_bot_config.py` - Bot principal d'exécution
+- `arbitrage_strategy.py` - Stratégie d'arbitrage
+- `trade_verification.py` - Vérification des trades
+- `logger.py` - Configuration du logging
+- `trading_config.json` - Configuration des trades
 
-### Paradex DEX  
-- **Script** : `paradex/paradex_trader.py`
-- **Python** : 3.11 (`python3.11`)
-- **Trade** : ETH avec levier 50x
-- **Status** : ✅ Fonctionnel
+### Traders
+- `lighter/lighter_trader_config.py` - Trader Lighter
+- `paradex/paradex_trader_config.py` - Trader Paradex
 
-## 📋 Utilisation
+### Interface web
+- `web_server.py` - Serveur web (port 8080)
+- `web_interface.html` - Interface utilisateur
+- `start_web_interface.sh` - Script de démarrage
 
-### Lighter DEX
+### Collecte Supabase
+- `supabase/functions/get-dex-prices/` - Edge Function pour récupérer les prix
+- `supabase/functions/collect-prices/` - Edge Function pour collecter et stocker
+- `supabase/setup_simple.sql` - Script SQL de configuration
+
+### Utilitaires
+- `execute_sql_direct.py` - Exécution SQL sur Supabase
+- `requirements.txt` - Dépendances Python
+
+## 🚀 Utilisation
+
+### Démarrer l'interface web
 ```bash
-/usr/bin/python3 lighter/lighter_trader.py
+./start_web_interface.sh
 ```
+Puis ouvrez http://localhost:8080
 
-### Paradex DEX
-```bash
-python3.11 paradex/paradex_trader.py
-```
+### Configuration
+Modifiez `trading_config.json` ou utilisez l'interface web.
 
-## ⚙️ Configuration
+### Collecte des prix
+La collecte est automatique via Supabase (cron job).
 
-Les scripts utilisent les clés configurées dans les fichiers :
-- Lighter : Clés hardcodées dans le script
-- Paradex : Clés hardcodées dans le script
+## 📊 Collecte des prix
 
-## 📊 Tests Réussis
+Les prix sont collectés automatiquement toutes les secondes dans Supabase :
+- Table : `price_history`
+- Tokens : BTC, ETH
+- Exchanges : Lighter, Paradex
 
-- ✅ Lighter : Trade BTC 0.00001 (~$10) avec levier 10x
-- ✅ Paradex : Trade ETH 0.03 (~$134) avec levier 50x
-
-## 🔧 Installation
-
-### Pour Lighter (Python 3.9)
-```bash
-/usr/bin/python3 -m pip install lighter-sdk
-```
-
-### Pour Paradex (Python 3.11)
-```bash
-python3.11 -m pip install paradex-py starknet-py
-```
