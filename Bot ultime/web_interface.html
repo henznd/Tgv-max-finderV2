@@ -565,8 +565,16 @@
                         if (health.lighter.positions && health.lighter.positions.length > 0) {
                             positionsHtml = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e9ecef;"><strong>Positions:</strong>';
                             health.lighter.positions.forEach(pos => {
-                                const token = pos.market_index === 0 ? 'ETH' : pos.market_index === 1 ? 'BTC' : pos.market_index === 2 ? 'SOL' : `Market ${pos.market_index}`;
-                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${token}:</span> <strong>${pos.size > 0 ? '+' : ''}${pos.size.toFixed(4)}</strong> @ $${pos.entry_price.toFixed(2)}</div>`;
+                                // Utiliser le symbol si disponible, sinon mapper market_index
+                                const token = pos.symbol || (pos.market_index === 0 ? 'ETH' : pos.market_index === 1 ? 'BTC' : pos.market_index === 2 ? 'SOL' : `Market ${pos.market_index}`);
+                                const size = pos.size || pos.position || 0;
+                                const entryPrice = pos.entry_price || pos.avg_entry_price || 0;
+                                const liqPrice = pos.liquidation_price || 0;
+                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${token}:</span> <strong>${size > 0 ? '+' : ''}${size.toFixed(4)}</strong> @ $${entryPrice.toFixed(2)}`;
+                                if (liqPrice > 0) {
+                                    positionsHtml += ` <span style="color: #e74c3c; font-size: 0.85em;">(Liq: $${liqPrice.toFixed(2)})</span>`;
+                                }
+                                positionsHtml += `</div>`;
                             });
                             positionsHtml += '</div>';
                         }
@@ -1240,8 +1248,16 @@
                         if (health.lighter.positions && health.lighter.positions.length > 0) {
                             positionsHtml = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e9ecef;"><strong>Positions:</strong>';
                             health.lighter.positions.forEach(pos => {
-                                const token = pos.market_index === 0 ? 'ETH' : pos.market_index === 1 ? 'BTC' : pos.market_index === 2 ? 'SOL' : `Market ${pos.market_index}`;
-                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${token}:</span> <strong>${pos.size > 0 ? '+' : ''}${pos.size.toFixed(4)}</strong> @ $${pos.entry_price.toFixed(2)}</div>`;
+                                // Utiliser le symbol si disponible, sinon mapper market_index
+                                const token = pos.symbol || (pos.market_index === 0 ? 'ETH' : pos.market_index === 1 ? 'BTC' : pos.market_index === 2 ? 'SOL' : `Market ${pos.market_index}`);
+                                const size = pos.size || pos.position || 0;
+                                const entryPrice = pos.entry_price || pos.avg_entry_price || 0;
+                                const liqPrice = pos.liquidation_price || 0;
+                                positionsHtml += `<div style="margin-top: 5px; font-size: 0.9em;"><span style="color: #6c757d;">${token}:</span> <strong>${size > 0 ? '+' : ''}${size.toFixed(4)}</strong> @ $${entryPrice.toFixed(2)}`;
+                                if (liqPrice > 0) {
+                                    positionsHtml += ` <span style="color: #e74c3c; font-size: 0.85em;">(Liq: $${liqPrice.toFixed(2)})</span>`;
+                                }
+                                positionsHtml += `</div>`;
                             });
                             positionsHtml += '</div>';
                         }

@@ -120,34 +120,42 @@ class TradeVerification:
                 # Chercher la position pour ce market_index
                 positions = account_state_after.get("positions", [])
                 for pos in positions:
-                    pos_market = pos.get("market_index") or pos.get("marketIndex")
+                    # AccountApi utilise 'market_id' (on l'a mappé à 'market_index' dans _get_lighter_account_state)
+                    pos_market = pos.get("market_index") or pos.get("market_id") or pos.get("marketIndex")
                     if pos_market == market_index:
-                        pos_size = float(pos.get("size") or pos.get("base_amount") or pos.get("baseAmount") or 0)
+                        # AccountApi utilise 'position' pour la taille
+                        pos_size = float(pos.get("position") or pos.get("size") or pos.get("base_amount") or pos.get("baseAmount") or 0)
                         
                         if abs(pos_size) > 0:
                             result["position_found"] = True
                             result["position_size"] = pos_size
                             result["executed"] = True
                             
-                            # Calculer le prix de liquidation approximatif
-                            # liquidation_price = entry_price * (1 - 1/leverage) pour long
-                            # liquidation_price = entry_price * (1 + 1/leverage) pour short
-                            entry_price = float(pos.get("entry_price") or pos.get("entryPrice") or 0)
-                            if entry_price > 0:
+                            # AccountApi utilise 'avg_entry_price' (on l'a mappé à 'entry_price')
+                            entry_price = float(pos.get("entry_price") or pos.get("avg_entry_price") or pos.get("entryPrice") or 0)
+                            
+                            # Prix de liquidation (déjà extrait depuis additional_properties)
+                            liquidation_price = float(pos.get("liquidation_price") or 0)
+                            
+                            # Si pas de liquidation_price dans les données, calculer approximativement
+                            if liquidation_price == 0 and entry_price > 0:
                                 if order_type.lower() == "buy":  # Long
                                     result["liquidation_price"] = entry_price * (1 - 1/leverage)
                                 else:  # Short
                                     result["liquidation_price"] = entry_price * (1 + 1/leverage)
+                            else:
+                                result["liquidation_price"] = liquidation_price
                             
-                            # Marge utilisée
-                            result["margin_used"] = float(pos.get("margin") or pos.get("margin_used") or 0)
+                            # Marge utilisée (allocated_margin dans AccountApi)
+                            result["margin_used"] = float(pos.get("allocated_margin") or pos.get("margin") or pos.get("margin_used") or 0)
                             
                             # Health factor (approximatif)
                             if result["balance_after"]["total_equity"] and result["margin_used"]:
                                 result["health_factor"] = result["balance_after"]["total_equity"] / result["margin_used"]
                             
-                            self.logger.info(f"   ✅ Position trouvée: {pos_size} {token}")
-                            self.logger.info(f"   💰 Prix d'entrée: ${entry_price:.2f}")
+                            self.logger.info(f"   ✅ Position trouvée: {pos_size} {token} (market_id: {pos_market})")
+                            if entry_price > 0:
+                                self.logger.info(f"   💰 Prix d'entrée: ${entry_price:.2f}")
                             if result["liquidation_price"]:
                                 self.logger.info(f"   ⚠️ Prix de liquidation: ${result['liquidation_price']:.2f}")
                             if result["health_factor"]:
@@ -346,18 +354,19 @@ class TradeVerification:
         return result
     
     async def _get_lighter_account_state(self) -> Optional[Dict]:
-        """Récupère l'état du compte Lighter via AccountApi"""
+        """Récupère l'état du compte Lighter via AccountApi (testé et fonctionnel)"""
         try:
             from lighter.api.account_api import AccountApi
             from lighter.api_client import ApiClient
-            import ssl
+            import aiohttp
             
-            # Créer un client API avec SSL désactivé (comme pour les autres appels)
+            self.logger.info(f"📡 Récupération de l'état du compte Lighter (index: {LIGHTER_ACCOUNT_INDEX})...")
+            
+            # Créer un client API avec SSL désactivé
             api_client = ApiClient()
             api_client.configuration.host = LIGHTER_BASE_URL
-            api_client.configuration.ssl_ca_cert = False  # Désactiver la vérification SSL
-            # Configurer le connector aiohttp pour désactiver SSL
-            import aiohttp
+            api_client.configuration.ssl_ca_cert = False
+            
             connector = aiohttp.TCPConnector(ssl=False)
             api_client.rest_client.pool_manager._connector = connector
             
@@ -365,13 +374,12 @@ class TradeVerification:
             account_api = AccountApi(api_client)
             
             # Récupérer le compte par index
-            self.logger.info(f"📡 Récupération de l'état du compte Lighter (index: {LIGHTER_ACCOUNT_INDEX})...")
             accounts_response = await account_api.account(by="index", value=str(LIGHTER_ACCOUNT_INDEX))
             
-            # accounts_response est un DetailedAccounts qui contient une liste accounts
+            # Extraire le compte de la réponse
             account = None
             if hasattr(accounts_response, 'accounts') and accounts_response.accounts:
-                account = accounts_response.accounts[0]  # Prendre le premier compte
+                account = accounts_response.accounts[0]
             elif hasattr(accounts_response, 'account'):
                 account = accounts_response.account
             else:
@@ -379,45 +387,125 @@ class TradeVerification:
             
             if not account:
                 self.logger.warning("⚠️ Aucun compte trouvé dans la réponse")
+                await api_client.close()
                 return None
             
-            # Extraire les informations pertinentes
+            # Extraire les positions (AccountApi utilise 'position' pour la taille et 'market_id' pour l'index)
             positions = []
             if hasattr(account, 'positions') and account.positions:
                 for pos in account.positions:
-                    if hasattr(pos, 'base_amount') or hasattr(pos, 'size'):
-                        size = getattr(pos, 'base_amount', getattr(pos, 'size', 0))
-                        if hasattr(size, '__float__'):
-                            size = float(size)
+                    # AccountApi utilise 'position' (string) pour la taille
+                    position_str = getattr(pos, 'position', '0')
+                    try:
+                        size = float(position_str) if position_str else 0
+                    except (ValueError, TypeError):
+                        size = 0
+                    
+                    if abs(size) > 0:
+                        # AccountApi utilise 'market_id' (pas 'market_index')
+                        market_id = getattr(pos, 'market_id', None)
+                        # AccountApi utilise 'avg_entry_price' (pas 'entry_price')
+                        avg_entry_price_str = getattr(pos, 'avg_entry_price', '0')
+                        try:
+                            entry_price = float(avg_entry_price_str) if avg_entry_price_str else 0
+                        except (ValueError, TypeError):
+                            entry_price = 0
+                        
+                        # Prix de liquidation dans additional_properties
+                        liquidation_price = 0
+                        if hasattr(pos, 'additional_properties') and isinstance(pos.additional_properties, dict):
+                            liq_str = pos.additional_properties.get('liquidation_price', '0')
+                            try:
+                                liquidation_price = float(liq_str) if liq_str and liq_str != '0' else 0
+                            except (ValueError, TypeError):
+                                liquidation_price = 0
+                        
                         positions.append({
-                            "market_index": getattr(pos, 'market_index', None),
+                            "market_index": market_id,  # Utiliser market_id comme market_index
+                            "market_id": market_id,
                             "size": size,
-                            "entry_price": float(getattr(pos, 'entry_price', 0)) if hasattr(pos, 'entry_price') else 0,
+                            "position": size,  # Alias pour compatibilité
+                            "base_amount": size,  # Alias pour compatibilité
+                            "entry_price": entry_price,
+                            "avg_entry_price": entry_price,
+                            "liquidation_price": liquidation_price,
+                            "symbol": getattr(pos, 'symbol', None)
                         })
             
-            # Récupérer les stats de marge si disponibles
-            # Essayer différents noms d'attributs possibles
+            # Récupérer les stats de marge depuis account
             total_equity = None
             available_margin = None
             used_margin = None
             
-            # Chercher dans account directement
+            # Chercher dans account directement (AccountApi structure)
             if hasattr(account, 'total_equity'):
-                total_equity = float(account.total_equity) if account.total_equity else None
+                try:
+                    total_equity = float(account.total_equity) if account.total_equity else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'totalEquity'):
+                try:
+                    total_equity = float(account.totalEquity) if account.totalEquity else None
+                except (ValueError, TypeError):
+                    pass
+            
             if hasattr(account, 'available_margin'):
-                available_margin = float(account.available_margin) if account.available_margin else None
+                try:
+                    available_margin = float(account.available_margin) if account.available_margin else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'availableMargin'):
+                try:
+                    available_margin = float(account.availableMargin) if account.availableMargin else None
+                except (ValueError, TypeError):
+                    pass
+            
             if hasattr(account, 'used_margin'):
-                used_margin = float(account.used_margin) if account.used_margin else None
+                try:
+                    used_margin = float(account.used_margin) if account.used_margin else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'usedMargin'):
+                try:
+                    used_margin = float(account.usedMargin) if account.usedMargin else None
+                except (ValueError, TypeError):
+                    pass
             
             # Chercher dans margin_stats si disponible
-            margin_stats = getattr(account, 'margin_stats', None)
+            margin_stats = getattr(account, 'margin_stats', getattr(account, 'marginStats', None))
             if margin_stats:
                 if hasattr(margin_stats, 'total_equity'):
-                    total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
+                    try:
+                        total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'totalEquity'):
+                    try:
+                        total_equity = float(margin_stats.totalEquity) if margin_stats.totalEquity else None
+                    except (ValueError, TypeError):
+                        pass
+                
                 if hasattr(margin_stats, 'available_margin'):
-                    available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
+                    try:
+                        available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'availableMargin'):
+                    try:
+                        available_margin = float(margin_stats.availableMargin) if margin_stats.availableMargin else None
+                    except (ValueError, TypeError):
+                        pass
+                
                 if hasattr(margin_stats, 'used_margin'):
-                    used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
+                    try:
+                        used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'usedMargin'):
+                    try:
+                        used_margin = float(margin_stats.usedMargin) if margin_stats.usedMargin else None
+                    except (ValueError, TypeError):
+                        pass
             
             result = {
                 "total_equity": total_equity,
@@ -427,8 +515,12 @@ class TradeVerification:
             }
             
             self.logger.info(f"✅ État du compte récupéré: {len(positions)} positions")
-            await api_client.close()
+            if total_equity:
+                self.logger.info(f"   💰 Equity totale: ${total_equity:.2f}")
+            if available_margin:
+                self.logger.info(f"   💵 Marge disponible: ${available_margin:.2f}")
             
+            await api_client.close()
             return result
             
         except ImportError:
@@ -601,34 +693,42 @@ class TradeVerification:
                 # Chercher la position pour ce market_index
                 positions = account_state_after.get("positions", [])
                 for pos in positions:
-                    pos_market = pos.get("market_index") or pos.get("marketIndex")
+                    # AccountApi utilise 'market_id' (on l'a mappé à 'market_index' dans _get_lighter_account_state)
+                    pos_market = pos.get("market_index") or pos.get("market_id") or pos.get("marketIndex")
                     if pos_market == market_index:
-                        pos_size = float(pos.get("size") or pos.get("base_amount") or pos.get("baseAmount") or 0)
+                        # AccountApi utilise 'position' pour la taille
+                        pos_size = float(pos.get("position") or pos.get("size") or pos.get("base_amount") or pos.get("baseAmount") or 0)
                         
                         if abs(pos_size) > 0:
                             result["position_found"] = True
                             result["position_size"] = pos_size
                             result["executed"] = True
                             
-                            # Calculer le prix de liquidation approximatif
-                            # liquidation_price = entry_price * (1 - 1/leverage) pour long
-                            # liquidation_price = entry_price * (1 + 1/leverage) pour short
-                            entry_price = float(pos.get("entry_price") or pos.get("entryPrice") or 0)
-                            if entry_price > 0:
+                            # AccountApi utilise 'avg_entry_price' (on l'a mappé à 'entry_price')
+                            entry_price = float(pos.get("entry_price") or pos.get("avg_entry_price") or pos.get("entryPrice") or 0)
+                            
+                            # Prix de liquidation (déjà extrait depuis additional_properties)
+                            liquidation_price = float(pos.get("liquidation_price") or 0)
+                            
+                            # Si pas de liquidation_price dans les données, calculer approximativement
+                            if liquidation_price == 0 and entry_price > 0:
                                 if order_type.lower() == "buy":  # Long
                                     result["liquidation_price"] = entry_price * (1 - 1/leverage)
                                 else:  # Short
                                     result["liquidation_price"] = entry_price * (1 + 1/leverage)
+                            else:
+                                result["liquidation_price"] = liquidation_price
                             
-                            # Marge utilisée
-                            result["margin_used"] = float(pos.get("margin") or pos.get("margin_used") or 0)
+                            # Marge utilisée (allocated_margin dans AccountApi)
+                            result["margin_used"] = float(pos.get("allocated_margin") or pos.get("margin") or pos.get("margin_used") or 0)
                             
                             # Health factor (approximatif)
                             if result["balance_after"]["total_equity"] and result["margin_used"]:
                                 result["health_factor"] = result["balance_after"]["total_equity"] / result["margin_used"]
                             
-                            self.logger.info(f"   ✅ Position trouvée: {pos_size} {token}")
-                            self.logger.info(f"   💰 Prix d'entrée: ${entry_price:.2f}")
+                            self.logger.info(f"   ✅ Position trouvée: {pos_size} {token} (market_id: {pos_market})")
+                            if entry_price > 0:
+                                self.logger.info(f"   💰 Prix d'entrée: ${entry_price:.2f}")
                             if result["liquidation_price"]:
                                 self.logger.info(f"   ⚠️ Prix de liquidation: ${result['liquidation_price']:.2f}")
                             if result["health_factor"]:
@@ -827,18 +927,19 @@ class TradeVerification:
         return result
     
     async def _get_lighter_account_state(self) -> Optional[Dict]:
-        """Récupère l'état du compte Lighter via AccountApi"""
+        """Récupère l'état du compte Lighter via AccountApi (testé et fonctionnel)"""
         try:
             from lighter.api.account_api import AccountApi
             from lighter.api_client import ApiClient
-            import ssl
+            import aiohttp
             
-            # Créer un client API avec SSL désactivé (comme pour les autres appels)
+            self.logger.info(f"📡 Récupération de l'état du compte Lighter (index: {LIGHTER_ACCOUNT_INDEX})...")
+            
+            # Créer un client API avec SSL désactivé
             api_client = ApiClient()
             api_client.configuration.host = LIGHTER_BASE_URL
-            api_client.configuration.ssl_ca_cert = False  # Désactiver la vérification SSL
-            # Configurer le connector aiohttp pour désactiver SSL
-            import aiohttp
+            api_client.configuration.ssl_ca_cert = False
+            
             connector = aiohttp.TCPConnector(ssl=False)
             api_client.rest_client.pool_manager._connector = connector
             
@@ -846,13 +947,12 @@ class TradeVerification:
             account_api = AccountApi(api_client)
             
             # Récupérer le compte par index
-            self.logger.info(f"📡 Récupération de l'état du compte Lighter (index: {LIGHTER_ACCOUNT_INDEX})...")
             accounts_response = await account_api.account(by="index", value=str(LIGHTER_ACCOUNT_INDEX))
             
-            # accounts_response est un DetailedAccounts qui contient une liste accounts
+            # Extraire le compte de la réponse
             account = None
             if hasattr(accounts_response, 'accounts') and accounts_response.accounts:
-                account = accounts_response.accounts[0]  # Prendre le premier compte
+                account = accounts_response.accounts[0]
             elif hasattr(accounts_response, 'account'):
                 account = accounts_response.account
             else:
@@ -860,45 +960,125 @@ class TradeVerification:
             
             if not account:
                 self.logger.warning("⚠️ Aucun compte trouvé dans la réponse")
+                await api_client.close()
                 return None
             
-            # Extraire les informations pertinentes
+            # Extraire les positions (AccountApi utilise 'position' pour la taille et 'market_id' pour l'index)
             positions = []
             if hasattr(account, 'positions') and account.positions:
                 for pos in account.positions:
-                    if hasattr(pos, 'base_amount') or hasattr(pos, 'size'):
-                        size = getattr(pos, 'base_amount', getattr(pos, 'size', 0))
-                        if hasattr(size, '__float__'):
-                            size = float(size)
+                    # AccountApi utilise 'position' (string) pour la taille
+                    position_str = getattr(pos, 'position', '0')
+                    try:
+                        size = float(position_str) if position_str else 0
+                    except (ValueError, TypeError):
+                        size = 0
+                    
+                    if abs(size) > 0:
+                        # AccountApi utilise 'market_id' (pas 'market_index')
+                        market_id = getattr(pos, 'market_id', None)
+                        # AccountApi utilise 'avg_entry_price' (pas 'entry_price')
+                        avg_entry_price_str = getattr(pos, 'avg_entry_price', '0')
+                        try:
+                            entry_price = float(avg_entry_price_str) if avg_entry_price_str else 0
+                        except (ValueError, TypeError):
+                            entry_price = 0
+                        
+                        # Prix de liquidation dans additional_properties
+                        liquidation_price = 0
+                        if hasattr(pos, 'additional_properties') and isinstance(pos.additional_properties, dict):
+                            liq_str = pos.additional_properties.get('liquidation_price', '0')
+                            try:
+                                liquidation_price = float(liq_str) if liq_str and liq_str != '0' else 0
+                            except (ValueError, TypeError):
+                                liquidation_price = 0
+                        
                         positions.append({
-                            "market_index": getattr(pos, 'market_index', None),
+                            "market_index": market_id,  # Utiliser market_id comme market_index
+                            "market_id": market_id,
                             "size": size,
-                            "entry_price": float(getattr(pos, 'entry_price', 0)) if hasattr(pos, 'entry_price') else 0,
+                            "position": size,  # Alias pour compatibilité
+                            "base_amount": size,  # Alias pour compatibilité
+                            "entry_price": entry_price,
+                            "avg_entry_price": entry_price,
+                            "liquidation_price": liquidation_price,
+                            "symbol": getattr(pos, 'symbol', None)
                         })
             
-            # Récupérer les stats de marge si disponibles
-            # Essayer différents noms d'attributs possibles
+            # Récupérer les stats de marge depuis account
             total_equity = None
             available_margin = None
             used_margin = None
             
-            # Chercher dans account directement
+            # Chercher dans account directement (AccountApi structure)
             if hasattr(account, 'total_equity'):
-                total_equity = float(account.total_equity) if account.total_equity else None
+                try:
+                    total_equity = float(account.total_equity) if account.total_equity else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'totalEquity'):
+                try:
+                    total_equity = float(account.totalEquity) if account.totalEquity else None
+                except (ValueError, TypeError):
+                    pass
+            
             if hasattr(account, 'available_margin'):
-                available_margin = float(account.available_margin) if account.available_margin else None
+                try:
+                    available_margin = float(account.available_margin) if account.available_margin else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'availableMargin'):
+                try:
+                    available_margin = float(account.availableMargin) if account.availableMargin else None
+                except (ValueError, TypeError):
+                    pass
+            
             if hasattr(account, 'used_margin'):
-                used_margin = float(account.used_margin) if account.used_margin else None
+                try:
+                    used_margin = float(account.used_margin) if account.used_margin else None
+                except (ValueError, TypeError):
+                    pass
+            elif hasattr(account, 'usedMargin'):
+                try:
+                    used_margin = float(account.usedMargin) if account.usedMargin else None
+                except (ValueError, TypeError):
+                    pass
             
             # Chercher dans margin_stats si disponible
-            margin_stats = getattr(account, 'margin_stats', None)
+            margin_stats = getattr(account, 'margin_stats', getattr(account, 'marginStats', None))
             if margin_stats:
                 if hasattr(margin_stats, 'total_equity'):
-                    total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
+                    try:
+                        total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'totalEquity'):
+                    try:
+                        total_equity = float(margin_stats.totalEquity) if margin_stats.totalEquity else None
+                    except (ValueError, TypeError):
+                        pass
+                
                 if hasattr(margin_stats, 'available_margin'):
-                    available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
+                    try:
+                        available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'availableMargin'):
+                    try:
+                        available_margin = float(margin_stats.availableMargin) if margin_stats.availableMargin else None
+                    except (ValueError, TypeError):
+                        pass
+                
                 if hasattr(margin_stats, 'used_margin'):
-                    used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
+                    try:
+                        used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
+                    except (ValueError, TypeError):
+                        pass
+                elif hasattr(margin_stats, 'usedMargin'):
+                    try:
+                        used_margin = float(margin_stats.usedMargin) if margin_stats.usedMargin else None
+                    except (ValueError, TypeError):
+                        pass
             
             result = {
                 "total_equity": total_equity,
@@ -908,8 +1088,12 @@ class TradeVerification:
             }
             
             self.logger.info(f"✅ État du compte récupéré: {len(positions)} positions")
-            await api_client.close()
+            if total_equity:
+                self.logger.info(f"   💰 Equity totale: ${total_equity:.2f}")
+            if available_margin:
+                self.logger.info(f"   💵 Marge disponible: ${available_margin:.2f}")
             
+            await api_client.close()
             return result
             
         except ImportError:
