@@ -377,14 +377,36 @@ async def get_health_async():
         
         if account_summary:
             if isinstance(account_summary, dict):
-                total_equity = account_summary.get("total_equity")
-                available_balance = account_summary.get("available_balance")
-                margin_used = account_summary.get("margin_used")
+                # Paradex utilise account_value pour l'equity totale
+                total_equity = account_summary.get("account_value") or account_summary.get("total_equity")
+                # Paradex utilise free_collateral pour la balance disponible
+                available_balance = account_summary.get("free_collateral") or account_summary.get("available_balance")
+                # Paradex utilise initial_margin_requirement pour la marge utilisée
+                margin_used = account_summary.get("initial_margin_requirement") or account_summary.get("margin_used")
             else:
-                # C'est un objet, utiliser getattr
-                total_equity = getattr(account_summary, 'total_equity', None)
-                available_balance = getattr(account_summary, 'available_balance', None)
-                margin_used = getattr(account_summary, 'margin_used', None)
+                # C'est un objet, utiliser getattr avec les bons noms d'attributs Paradex
+                total_equity = getattr(account_summary, 'account_value', None) or getattr(account_summary, 'total_equity', None)
+                available_balance = getattr(account_summary, 'free_collateral', None) or getattr(account_summary, 'available_balance', None)
+                margin_used = getattr(account_summary, 'initial_margin_requirement', None) or getattr(account_summary, 'margin_used', None)
+            
+            # Convertir les strings en float (Paradex retourne des strings)
+            try:
+                if total_equity is not None:
+                    total_equity = float(total_equity) if isinstance(total_equity, str) else total_equity
+            except (ValueError, TypeError):
+                total_equity = None
+            
+            try:
+                if available_balance is not None:
+                    available_balance = float(available_balance) if isinstance(available_balance, str) else available_balance
+            except (ValueError, TypeError):
+                available_balance = None
+            
+            try:
+                if margin_used is not None:
+                    margin_used = float(margin_used) if isinstance(margin_used, str) else margin_used
+            except (ValueError, TypeError):
+                margin_used = None
         
         health_data["paradex"] = {
             "status": "ok",

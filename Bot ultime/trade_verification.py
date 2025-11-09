@@ -432,80 +432,47 @@ class TradeVerification:
                             "symbol": getattr(pos, 'symbol', None)
                         })
             
-            # Récupérer les stats de marge depuis account
+            # Récupérer les stats de marge depuis account (AccountApi utilise total_asset_value, available_balance, etc.)
             total_equity = None
             available_margin = None
             used_margin = None
             
-            # Chercher dans account directement (AccountApi structure)
-            if hasattr(account, 'total_equity'):
+            # Lighter utilise total_asset_value pour l'equity totale
+            if hasattr(account, 'total_asset_value'):
                 try:
-                    total_equity = float(account.total_equity) if account.total_equity else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'totalEquity'):
-                try:
-                    total_equity = float(account.totalEquity) if account.totalEquity else None
+                    total_equity = float(account.total_asset_value) if account.total_asset_value else None
                 except (ValueError, TypeError):
                     pass
             
-            if hasattr(account, 'available_margin'):
+            # Lighter utilise available_balance pour la marge disponible
+            if hasattr(account, 'available_balance'):
                 try:
-                    available_margin = float(account.available_margin) if account.available_margin else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'availableMargin'):
-                try:
-                    available_margin = float(account.availableMargin) if account.availableMargin else None
+                    available_margin = float(account.available_balance) if account.available_balance else None
                 except (ValueError, TypeError):
                     pass
             
-            if hasattr(account, 'used_margin'):
+            # Calculer used_margin = collateral - available_balance (ou utiliser allocated_margin des positions)
+            if hasattr(account, 'collateral') and available_margin is not None:
                 try:
-                    used_margin = float(account.used_margin) if account.used_margin else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'usedMargin'):
-                try:
-                    used_margin = float(account.usedMargin) if account.usedMargin else None
+                    collateral = float(account.collateral) if account.collateral else 0
+                    if collateral > 0:
+                        used_margin = collateral - available_margin
                 except (ValueError, TypeError):
                     pass
             
-            # Chercher dans margin_stats si disponible
-            margin_stats = getattr(account, 'margin_stats', getattr(account, 'marginStats', None))
-            if margin_stats:
-                if hasattr(margin_stats, 'total_equity'):
-                    try:
-                        total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'totalEquity'):
-                    try:
-                        total_equity = float(margin_stats.totalEquity) if margin_stats.totalEquity else None
-                    except (ValueError, TypeError):
-                        pass
-                
-                if hasattr(margin_stats, 'available_margin'):
-                    try:
-                        available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'availableMargin'):
-                    try:
-                        available_margin = float(margin_stats.availableMargin) if margin_stats.availableMargin else None
-                    except (ValueError, TypeError):
-                        pass
-                
-                if hasattr(margin_stats, 'used_margin'):
-                    try:
-                        used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'usedMargin'):
-                    try:
-                        used_margin = float(margin_stats.usedMargin) if margin_stats.usedMargin else None
-                    except (ValueError, TypeError):
-                        pass
+            # Sinon, chercher dans les positions (somme des allocated_margin)
+            if used_margin is None or used_margin == 0:
+                if hasattr(account, 'positions') and account.positions:
+                    total_allocated = 0
+                    for pos in account.positions:
+                        if hasattr(pos, 'allocated_margin'):
+                            try:
+                                allocated = float(pos.allocated_margin) if pos.allocated_margin else 0
+                                total_allocated += allocated
+                            except (ValueError, TypeError):
+                                pass
+                    if total_allocated > 0:
+                        used_margin = total_allocated
             
             result = {
                 "total_equity": total_equity,
@@ -1005,80 +972,47 @@ class TradeVerification:
                             "symbol": getattr(pos, 'symbol', None)
                         })
             
-            # Récupérer les stats de marge depuis account
+            # Récupérer les stats de marge depuis account (AccountApi utilise total_asset_value, available_balance, etc.)
             total_equity = None
             available_margin = None
             used_margin = None
             
-            # Chercher dans account directement (AccountApi structure)
-            if hasattr(account, 'total_equity'):
+            # Lighter utilise total_asset_value pour l'equity totale
+            if hasattr(account, 'total_asset_value'):
                 try:
-                    total_equity = float(account.total_equity) if account.total_equity else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'totalEquity'):
-                try:
-                    total_equity = float(account.totalEquity) if account.totalEquity else None
+                    total_equity = float(account.total_asset_value) if account.total_asset_value else None
                 except (ValueError, TypeError):
                     pass
             
-            if hasattr(account, 'available_margin'):
+            # Lighter utilise available_balance pour la marge disponible
+            if hasattr(account, 'available_balance'):
                 try:
-                    available_margin = float(account.available_margin) if account.available_margin else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'availableMargin'):
-                try:
-                    available_margin = float(account.availableMargin) if account.availableMargin else None
+                    available_margin = float(account.available_balance) if account.available_balance else None
                 except (ValueError, TypeError):
                     pass
             
-            if hasattr(account, 'used_margin'):
+            # Calculer used_margin = collateral - available_balance (ou utiliser allocated_margin des positions)
+            if hasattr(account, 'collateral') and available_margin is not None:
                 try:
-                    used_margin = float(account.used_margin) if account.used_margin else None
-                except (ValueError, TypeError):
-                    pass
-            elif hasattr(account, 'usedMargin'):
-                try:
-                    used_margin = float(account.usedMargin) if account.usedMargin else None
+                    collateral = float(account.collateral) if account.collateral else 0
+                    if collateral > 0:
+                        used_margin = collateral - available_margin
                 except (ValueError, TypeError):
                     pass
             
-            # Chercher dans margin_stats si disponible
-            margin_stats = getattr(account, 'margin_stats', getattr(account, 'marginStats', None))
-            if margin_stats:
-                if hasattr(margin_stats, 'total_equity'):
-                    try:
-                        total_equity = float(margin_stats.total_equity) if margin_stats.total_equity else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'totalEquity'):
-                    try:
-                        total_equity = float(margin_stats.totalEquity) if margin_stats.totalEquity else None
-                    except (ValueError, TypeError):
-                        pass
-                
-                if hasattr(margin_stats, 'available_margin'):
-                    try:
-                        available_margin = float(margin_stats.available_margin) if margin_stats.available_margin else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'availableMargin'):
-                    try:
-                        available_margin = float(margin_stats.availableMargin) if margin_stats.availableMargin else None
-                    except (ValueError, TypeError):
-                        pass
-                
-                if hasattr(margin_stats, 'used_margin'):
-                    try:
-                        used_margin = float(margin_stats.used_margin) if margin_stats.used_margin else None
-                    except (ValueError, TypeError):
-                        pass
-                elif hasattr(margin_stats, 'usedMargin'):
-                    try:
-                        used_margin = float(margin_stats.usedMargin) if margin_stats.usedMargin else None
-                    except (ValueError, TypeError):
-                        pass
+            # Sinon, chercher dans les positions (somme des allocated_margin)
+            if used_margin is None or used_margin == 0:
+                if hasattr(account, 'positions') and account.positions:
+                    total_allocated = 0
+                    for pos in account.positions:
+                        if hasattr(pos, 'allocated_margin'):
+                            try:
+                                allocated = float(pos.allocated_margin) if pos.allocated_margin else 0
+                                total_allocated += allocated
+                            except (ValueError, TypeError):
+                                pass
+                    if total_allocated > 0:
+                        used_margin = total_allocated
             
             result = {
                 "total_equity": total_equity,
