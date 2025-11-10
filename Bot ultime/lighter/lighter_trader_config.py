@@ -76,8 +76,8 @@ async def execute_trade(config_data):
     # Donc pour obtenir le bon montant, on doit multiplier par 1e5
     # Pour ETH: 1 ETH = 10,000 unités (1e4)
     if token == "BTC":
-        # CORRIGÉ: Lighter divise par 1e5, donc on multiplie par 1e5
-        # Cela permet de garder la précision (0.00096281 * 1e5 = 96.281 → 96 unités)
+        # CORRECTION: Revenons à 1e5 car le problème était dans le prix, pas dans la taille
+        # Le facteur 1e5 est correct pour la taille
         order_size_units = int(amount * 1e5)  # 1 BTC = 100,000 unités (1e5)
         logger.info(f"📏 Conversion BTC: {amount} BTC = {order_size_units} unités (précision 1e5 pour Lighter)")
     elif token == "ETH":
@@ -139,28 +139,59 @@ async def execute_trade(config_data):
         logger.info(f"   🆔 Client Order Index: {client_order_index}")
         logger.info(f"   💰 Base Amount: {order_size_units} unités ({amount} {token})")
         logger.info(f"   📈 Side: {'Vente/Short' if is_ask else 'Achat/Long'}")
-        logger.info(f"   🔄 Type: MARKET ORDER (avg_execution_price sera utilisé comme référence)")
+        logger.info(f"   🔄 Type: MARKET ORDER (avg_execution_price calculé depuis bid/ask)")
         
-        # Prix pour le market order (en centimes)
-        # Récupérer le prix depuis la config si fourni, sinon utiliser un prix par défaut
-        market_price = lighter_config.get('market_price')  # Prix en USD depuis l'API
-        if market_price:
-            # Le prix récupéré est déjà en USD, convertir en centimes (prix * 100)
-            # Lighter attend le prix en centimes pour avg_execution_price
-            avg_execution_price = int(float(market_price) * 100)
-            logger.info(f"   💲 Prix marché réel: ${market_price:.2f} = {avg_execution_price} centimes")
-            logger.info(f"   ✅ Utilisation du prix réel pour éviter le slippage")
+        # Calculer avg_execution_price depuis bid/ask avec marge de sécurité
+        # IMPORTANT: Ne jamais utiliser market_price de la config, toujours calculer depuis bid/ask
+        lighter_bid = lighter_config.get('bid')
+        lighter_ask = lighter_config.get('ask')
+        
+        # IMPORTANT: avg_execution_price est un CAP (limite), pas un prix cible !
+        # - Pour un ACHAT: cap MAXIMUM (prix moyen ne doit pas dépasser ce cap)
+        # - Pour une VENTE: cap MINIMUM (prix moyen ne doit pas descendre en dessous de ce cap)
+        # 
+        # Pour contrôler le slippage, on calcule le cap depuis le prix médian avec une tolérance
+        
+        if lighter_bid and lighter_ask:
+            # Calculer le prix médian (mid price)
+            mid_price = (lighter_bid + lighter_ask) / 2
+            
+            # Tolérance de slippage en pourcentage (0.5% = 0.005)
+            SLIPPAGE_TOLERANCE = 0.005  # 0.5% de slippage toléré
+            
+            if is_ask:
+                # Ordre de VENTE: cap MINIMUM
+                # Le prix moyen d'exécution ne doit pas descendre en dessous de ce cap
+                # On calcule: mid_price * (1 - slippage_tolerance)
+                # Cela donne un prix plus bas que le mid, permettant le slippage vers le bas
+                market_price = mid_price * (1 - SLIPPAGE_TOLERANCE)
+                logger.info(f"   💲 Prix vente (cap MINIMUM): ${market_price:.2f} (mid=${mid_price:.2f} - 0.5%)")
+                logger.info(f"   📊 Bid=${lighter_bid:.2f}, Ask=${lighter_ask:.2f}, Mid=${mid_price:.2f}")
+            else:
+                # Ordre d'ACHAT: cap MAXIMUM
+                # Le prix moyen d'exécution ne doit pas dépasser ce cap
+                # On calcule: mid_price * (1 + slippage_tolerance)
+                # Cela donne un prix plus haut que le mid, permettant le slippage vers le haut
+                market_price = mid_price * (1 + SLIPPAGE_TOLERANCE)
+                logger.info(f"   💲 Prix achat (cap MAXIMUM): ${market_price:.2f} (mid=${mid_price:.2f} + 0.5%)")
+                logger.info(f"   📊 Bid=${lighter_bid:.2f}, Ask=${lighter_ask:.2f}, Mid=${mid_price:.2f}")
+            
+            logger.info(f"   📊 Prix marché: bid=${lighter_bid:.2f}, ask=${lighter_ask:.2f}")
+            
+            # CORRECTION FACTEUR 10: Lighter attend le prix multiplié par 10
+            avg_execution_price = int(float(market_price) * 10)
+            logger.info(f"   ✅ Prix d'exécution: ${market_price:.2f} = {avg_execution_price} (prix * 10)")
         else:
-            # Fallback: Prix approximatif par défaut (en centimes)
-            logger.warning(f"   ⚠️ Prix marché non fourni, utilisation d'un prix par défaut")
+            # Fallback: Prix approximatif par défaut si bid/ask non disponibles
+            logger.warning(f"   ⚠️ Prix bid/ask non disponibles, utilisation d'un prix par défaut")
             logger.warning(f"   ⚠️ RISQUE DE SLIPPAGE ÉLEVÉ")
             if token == "BTC":
-                avg_execution_price = 12000000  # $120,000 * 100 centimes
+                avg_execution_price = 1200000  # $120,000 * 10
             elif token == "ETH":
-                avg_execution_price = 300000  # $3,000 * 100 centimes = 300,000 centimes
+                avg_execution_price = 30000  # $3,000 * 10
             else:
-                avg_execution_price = 100000  # Prix par défaut
-            logger.info(f"   💲 Prix par défaut: {avg_execution_price} centimes")
+                avg_execution_price = 10000  # Prix par défaut * 10
+            logger.info(f"   💲 Prix par défaut: {avg_execution_price} (prix * 10)")
         
         try:
             order, tx_hash, err = await client.create_market_order(
@@ -215,10 +246,12 @@ async def execute_trade(config_data):
             # Vérifier le risque de liquidation si position trouvée
             if verification_result.get("position_found"):
                 liquidation_price = verification_result.get("liquidation_price")
-                if liquidation_price and market_price:
+                # Utiliser le prix mid (moyenne bid/ask) pour la vérification du risque
+                if liquidation_price and lighter_bid and lighter_ask:
+                    current_price = (lighter_bid + lighter_ask) / 2
                     is_risky, risk_msg = verifier.check_liquidation_risk(
                         liquidation_price,
-                        market_price,
+                        current_price,
                         token
                     )
                     logger.info(f"\n{risk_msg}")

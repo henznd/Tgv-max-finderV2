@@ -29,6 +29,12 @@ bot_process = None
 bot_thread = None
 last_log_position = {}  # Pour suivre la position dans les fichiers de logs
 
+# État du bot stratégie (pour start/stop)
+strategy_bot_running = False
+strategy_bot_process = None
+strategy_bot_thread = None
+strategy_last_log_position = {}  # Pour suivre la position dans les fichiers de logs
+
 class ArbitrageBotHandler(BaseHTTPRequestHandler):
     """Handler pour les requêtes HTTP"""
     
@@ -39,6 +45,8 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             
             if parsed_path.path == '/' or parsed_path.path == '/index.html':
                 self.serve_html()
+            elif parsed_path.path == '/strategy.html':
+                self.serve_strategy_html()
             elif parsed_path.path == '/api/config':
                 self.get_config()
             elif parsed_path.path == '/api/status':
@@ -47,6 +55,10 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 self.get_logs()
             elif parsed_path.path == '/api/health':
                 self.get_health()
+            elif parsed_path.path == '/api/status-strategy':
+                self.get_strategy_status()
+            elif parsed_path.path == '/api/logs-strategy':
+                self.get_strategy_logs()
             else:
                 self.send_error(404, "Not Found")
         except Exception as e:
@@ -74,6 +86,10 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 self.launch_bot()
             elif parsed_path.path == '/api/stop':
                 self.stop_bot()
+            elif parsed_path.path == '/api/launch-strategy':
+                self.launch_strategy_bot()
+            elif parsed_path.path == '/api/stop-strategy':
+                self.stop_strategy_bot()
             else:
                 self.send_error(404, "Not Found")
         except Exception as e:
@@ -95,6 +111,21 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             self.wfile.write(content.encode('utf-8'))
         except Exception as e:
             logger.error(f"Erreur lors du chargement de l'interface: {e}")
+            self.send_error(500, f"Erreur: {e}")
+    
+    def serve_strategy_html(self):
+        """Sert le fichier HTML de l'interface stratégie"""
+        html_path = os.path.join(os.path.dirname(__file__), 'web_interface_strategy.html')
+        try:
+            with open(html_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Erreur lors du chargement de l'interface stratégie: {e}")
             self.send_error(500, f"Erreur: {e}")
     
     def get_config(self):
@@ -261,6 +292,261 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 "paradex": {"status": "error", "error": str(e)},
                 "timestamp": datetime.now().isoformat()
             }, status=500)
+    
+    def launch_strategy_bot(self):
+        """Lance le bot stratégie"""
+        global strategy_bot_running, strategy_bot_thread
+        
+        if strategy_bot_running:
+            self.send_json_response({"error": "Le bot stratégie est déjà en cours d'exécution"}, status=400)
+            return
+        
+        try:
+            # Lire les paramètres depuis le body
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            params = json.loads(body.decode('utf-8'))
+            
+            strategy_bot_running = True
+            
+            # Lancer le bot dans un thread séparé
+            strategy_bot_thread = threading.Thread(
+                target=run_strategy_bot_async,
+                args=(params,),
+                daemon=True
+            )
+            strategy_bot_thread.start()
+            
+            logger.info(f"Bot stratégie lancé avec paramètres: {params}")
+            self.send_json_response({"success": True, "message": "Bot stratégie lancé avec succès"})
+        except Exception as e:
+            strategy_bot_running = False
+            logger.error(f"Erreur lors du lancement du bot stratégie: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_json_response({"error": str(e)}, status=500)
+    
+    def stop_strategy_bot(self):
+        """Arrête le bot stratégie"""
+        global strategy_bot_running, strategy_bot_process
+        
+        if not strategy_bot_running:
+            self.send_json_response({"error": "Le bot stratégie n'est pas en cours d'exécution"}, status=400)
+            return
+        
+        try:
+            strategy_bot_running = False
+            
+            # Arrêter le processus si il existe
+            if strategy_bot_process:
+                try:
+                    strategy_bot_process.terminate()
+                    strategy_bot_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    strategy_bot_process.kill()
+                except Exception as e:
+                    logger.warning(f"Erreur lors de l'arrêt du processus: {e}")
+                strategy_bot_process = None
+            
+            # Aussi tuer le processus via pkill au cas où
+            try:
+                subprocess.run(['pkill', '-f', 'arbitrage_bot_strategy.py'], 
+                             capture_output=True, timeout=5)
+            except:
+                pass
+            
+            logger.info("Arrêt du bot stratégie demandé")
+            self.send_json_response({"success": True, "message": "Arrêt du bot stratégie demandé"})
+        except Exception as e:
+            logger.error(f"Erreur lors de l'arrêt du bot stratégie: {e}")
+            self.send_json_response({"error": str(e)}, status=500)
+    
+    def get_strategy_status(self):
+        """Récupère le statut du bot stratégie"""
+        global strategy_bot_running
+        self.send_json_response({
+            "running": strategy_bot_running,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def get_strategy_logs(self):
+        """Récupère les logs filtrés du bot stratégie (événements importants uniquement)"""
+        try:
+            log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+            if not os.path.exists(log_dir):
+                self.send_json_response({
+                    "logs": [],
+                    "stats": {"positions": 0, "trades": 0, "entries": 0, "exits": 0},
+                    "timestamp": datetime.now().isoformat()
+                })
+                return
+            
+            # Chercher les fichiers de log du bot stratégie
+            log_files = sorted(glob.glob(os.path.join(log_dir, 'arbitrage_bot_strategy_*.log')), reverse=True)
+            
+            if not log_files:
+                self.send_json_response({
+                    "logs": ["ℹ️ Aucun log disponible pour le moment."],
+                    "stats": {"positions": 0, "trades": 0, "entries": 0, "exits": 0},
+                    "timestamp": datetime.now().isoformat()
+                })
+                return
+            
+            # Lire les 2 fichiers les plus récents
+            log_files = log_files[:2]
+            all_lines = []
+            
+            for log_file in log_files:
+                try:
+                    if os.path.getsize(log_file) > 0:
+                        # Utiliser tail pour lire les dernières lignes efficacement
+                        import subprocess
+                        try:
+                            # Lire les 2000 dernières lignes avec tail (plus efficace pour gros fichiers)
+                            result = subprocess.run(
+                                ['tail', '-n', '2000', log_file],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if result.returncode == 0:
+                                lines = result.stdout.split('\n')
+                                valid_lines = [line.rstrip('\n\r') for line in lines if line.strip()]
+                                all_lines.extend(valid_lines)
+                            else:
+                                # Fallback: lire normalement
+                                with open(log_file, 'r', encoding='utf-8') as f:
+                                    lines = f.readlines()
+                                    recent_lines = lines[-2000:] if len(lines) > 2000 else lines
+                                    valid_lines = [line.rstrip('\n\r') for line in recent_lines if line.strip()]
+                                    all_lines.extend(valid_lines)
+                        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+                            # Fallback: lire normalement si tail n'est pas disponible
+                            with open(log_file, 'r', encoding='utf-8') as f:
+                                lines = f.readlines()
+                                recent_lines = lines[-2000:] if len(lines) > 2000 else lines
+                                valid_lines = [line.rstrip('\n\r') for line in recent_lines if line.strip()]
+                                all_lines.extend(valid_lines)
+                except Exception as e:
+                    logger.error(f"Erreur lecture fichier log {log_file}: {e}")
+            
+            # Calculer les statistiques
+            stats = {
+                "positions": 0,
+                "trades": 0,
+                "entries": 0,
+                "exits": 0
+            }
+            
+            # Compter les entrées et sorties
+            for line in all_lines:
+                if 'TRADES EXÉCUTÉS AVEC SUCCÈS' in line or 'SIGNAL D\'ENTRÉE DÉTECTÉ' in line:
+                    stats["entries"] += 1
+                    stats["trades"] += 1
+                elif 'POSITION FERMÉE' in line or 'POSITION EXISTANTE FERMÉE' in line:
+                    stats["exits"] += 1
+            
+            # Vérifier s'il y a une position ouverte actuellement
+            # En cherchant dans les logs récents si une entrée a été suivie d'une sortie
+            recent_lines = all_lines[-50:] if len(all_lines) > 50 else all_lines
+            has_open_position = False
+            last_entry_index = -1
+            for i, line in enumerate(recent_lines):
+                if 'TRADES EXÉCUTÉS AVEC SUCCÈS' in line:
+                    last_entry_index = i
+                    has_open_position = True
+                elif 'POSITION FERMÉE' in line and last_entry_index >= 0:
+                    has_open_position = False
+            
+            stats["positions"] = 1 if has_open_position else 0
+            
+            # Extraire le dernier Z-score depuis les logs
+            current_z_score = None
+            import re
+            from datetime import datetime
+            
+            # Trier les lignes par timestamp pour trouver le Z-score le plus récent
+            # Format de timestamp: "2025-11-10 01:09:37"
+            lines_with_z = []
+            for line in all_lines:
+                # Chercher les patterns: "Z-score: X.XX" ou "z=X.XX"
+                z_match = re.search(r'Z-score:\s*([+-]?\d+\.?\d*)', line)
+                if not z_match:
+                    z_match = re.search(r'z=([+-]?\d+\.?\d*)', line)
+                if z_match:
+                    # Extraire le timestamp de la ligne
+                    timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                    if timestamp_match:
+                        try:
+                            timestamp = datetime.strptime(timestamp_match.group(1), '%Y-%m-%d %H:%M:%S')
+                            z_value = float(z_match.group(1))
+                            lines_with_z.append((timestamp, z_value, line))
+                        except (ValueError, AttributeError):
+                            continue
+            
+            # Si on a trouvé des lignes avec Z-score, prendre la plus récente
+            if lines_with_z:
+                lines_with_z.sort(key=lambda x: x[0], reverse=True)  # Trier par timestamp décroissant
+                most_recent = lines_with_z[0]
+                current_z_score = most_recent[1]
+                logger.debug(f"📊 Z-score extrait: {current_z_score} (timestamp: {most_recent[0]})")
+            
+            if all_lines:
+                # Filtrer pour garder seulement les événements importants
+                important_keywords = [
+                    'BOT D\'ARBITRAGE',
+                    'Démarrage',
+                    'SIGNAL D\'ENTRÉE',
+                    'TRADES EXÉCUTÉS',
+                    'POSITION FERMÉE',
+                    'POSITION EXISTANTE FERMÉE',
+                    'CONDITIONS NON REMPLIES',
+                    'ÉCHEC DES TRADES',
+                    'Synchronisation',
+                    'Signal d\'entrée validé',
+                    'Nouveau signal détecté',
+                    'Signal de sortie détecté',
+                    'Signal de sortie en validation',
+                    'Surveillance position',
+                    '🔄 Synchronisation',
+                    '📉 POSITION',
+                    '🎯 SIGNAL',
+                    '✅ TRADES',
+                    '⚠️ CONDITIONS',
+                    '🔍 Signal de sortie',
+                    '⏳ Signal de sortie',
+                    '👁️  Surveillance'
+                ]
+                
+                filtered_logs = []
+                for line in all_lines:
+                    # Garder les lignes qui contiennent des mots-clés importants
+                    if any(keyword in line for keyword in important_keywords):
+                        filtered_logs.append(line)
+                
+                # IMPORTANT: Prendre les 100 dernières lignes filtrées (les plus récentes)
+                # Les lignes sont déjà dans l'ordre chronologique (du plus ancien au plus récent)
+                logs = filtered_logs[-100:] if len(filtered_logs) > 100 else filtered_logs
+                
+                # Debug: logger le nombre de logs trouvés
+                logger.debug(f"📊 Logs filtrés: {len(filtered_logs)} lignes, retournant les {len(logs)} dernières")
+            else:
+                logs = ["ℹ️ Aucun log disponible pour le moment."]
+            
+            # Ajouter un timestamp pour éviter le cache du navigateur
+            response = {
+                "logs": logs,
+                "stats": stats,
+                "z_score": current_z_score,
+                "timestamp": datetime.now().isoformat(),
+                "cache_buster": datetime.now().timestamp()
+            }
+            self.send_json_response(response)
+        except Exception as e:
+            logger.error(f"❌ Erreur lors de la récupération des logs stratégie: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_json_response({"error": str(e), "logs": []}, status=500)
     
     def send_json_response(self, data, status=200):
         """Envoie une réponse JSON"""
@@ -456,6 +742,57 @@ def run_bot_async():
         sys.stderr.flush()
     finally:
         bot_running = False
+
+def run_strategy_bot_async(params):
+    """Fonction pour exécuter le bot stratégie de manière asynchrone"""
+    global strategy_bot_running, strategy_bot_process
+    
+    try:
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot_strategy")
+        
+        # Construire la commande
+        cmd = [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), 'arbitrage_bot_strategy.py'),
+            '--token', params['token'],
+            '--margin', str(params['margin']),
+            '--leverage', str(params['leverage']),
+            '--entry-z', str(params['entry_z']),
+            '--exit-z', str(params['exit_z']),
+            '--stop-z', str(params['stop_z'])
+        ]
+        
+        bot_logger.info(f"🚀 Lancement du bot stratégie avec: {params}")
+        
+        # Lancer le processus
+        strategy_bot_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Lire la sortie en temps réel
+        for line in strategy_bot_process.stdout:
+            if not strategy_bot_running:
+                break
+            if line.strip():
+                bot_logger.info(line.strip())
+        
+        strategy_bot_process.wait()
+        
+    except Exception as e:
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot_strategy")
+        bot_logger.error(f"Erreur lors de l'exécution du bot stratégie: {e}")
+        import traceback
+        bot_logger.error(traceback.format_exc())
+    finally:
+        strategy_bot_running = False
+        strategy_bot_process = None
 
 def start_server(port=8080):
     """Démarre le serveur web"""

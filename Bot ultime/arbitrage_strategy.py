@@ -130,14 +130,21 @@ class ArbitrageStrategy:
                 
                 if duration_seconds >= self.params.min_duration_s:
                     # Signal confirmé pendant assez longtemps
+                    logger.info(f"🎯 Signal d'entrée validé: {current_direction} | z={z_score:.2f} | durée={duration_seconds:.1f}s")
                     return True, current_direction
+                else:
+                    # Signal en cours de validation
+                    logger.debug(f"⏳ Signal en validation: {current_direction} | z={z_score:.2f} | durée={duration_seconds:.1f}s/{self.params.min_duration_s}s")
             else:
                 # Nouveau signal ou changement de direction
                 self.signal_start_time = current_time
                 self.signal_direction = current_direction
+                logger.info(f"🔔 Nouveau signal détecté: {current_direction} | z={z_score:.2f} | Attente validation ({self.params.min_duration_s}s)")
         else:
             # Signal n'est plus valide (z-score en dessous du seuil)
-            # Réinitialiser
+            # Réinitialiser seulement si on avait un signal en cours
+            if self.signal_start_time is not None:
+                logger.debug(f"❌ Signal annulé: z={z_score:.2f} < seuil {self.params.entry_z}")
             self.signal_start_time = None
             self.signal_direction = None
         
@@ -151,6 +158,16 @@ class ArbitrageStrategy:
         """
         if self.current_position is None:
             return False, ""
+        
+        # NOUVEAU: Sortie immédiate si changement de direction (z-score change de signe)
+        # Cela permet d'entrer rapidement dans la direction opposée
+        if self.current_position.direction == 'short_spread' and z_score < 0:
+            # Position short mais z-score négatif → Sortir immédiatement
+            # Pas besoin d'attendre 4 secondes car c'est un changement de direction clair
+            return True, "direction_change"
+        elif self.current_position.direction == 'long_spread' and z_score > 0:
+            # Position long mais z-score positif → Sortir immédiatement
+            return True, "direction_change"
         
         # Déterminer la raison potentielle de sortie
         current_exit_reason = None

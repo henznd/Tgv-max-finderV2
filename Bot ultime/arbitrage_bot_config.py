@@ -269,24 +269,53 @@ async def execute_simultaneous_trades(config):
     logger.info(f"   📊 Levier configuré: {leverage}x")
     logger.info(f"   📊 Position totale calculée: ${position_value:.2f} (${margin:.2f} × {leverage}x)")
     
-    # Calculer le montant pour CHAQUE DEX en utilisant son propre prix
-    # ATTENTION: Paradex et Lighter ont des logiques différentes!
-    # - Paradex: utilise directement le montant calculé (position_value / prix)
-    # - Lighter: le montant doit être calculé différemment (voir conversion en unités)
-    # Pour l'instant, on calcule de la même façon, mais la conversion en unités diffère
-    lighter_amount = position_value / lighter_price
-    paradex_amount = position_value / paradex_price
+    # Calculer le montant pour CHAQUE DEX en utilisant le prix MID (moyenne bid/ask)
+    # IMPORTANT: Utiliser le prix MID pour le calcul du montant, pas le prix brut bid/ask
+    # Le market_price (avec marge de sécurité) sera utilisé pour l'exécution, mais pas pour le calcul du montant
     
-    logger.info(f"\n📏 CALCUL DU MONTANT EN {token}:")
-    logger.info(f"   📊 Prix Lighter: ${lighter_price:.2f} → Montant: {lighter_amount:.8f} {token}")
-    logger.info(f"   📊 Prix Paradex: ${paradex_price:.2f} → Montant: {paradex_amount:.8f} {token}")
+    # Récupérer les prix bid/ask depuis la config si disponibles
+    lighter_bid = config['lighter'].get('bid')
+    lighter_ask = config['lighter'].get('ask')
+    paradex_bid = config['paradex'].get('bid')
+    paradex_ask = config['paradex'].get('ask')
+    
+    # Utiliser le prix MID pour le calcul du montant (plus précis que bid ou ask seul)
+    if lighter_bid and lighter_ask:
+        lighter_mid = (lighter_bid + lighter_ask) / 2
+        lighter_amount = position_value / lighter_mid
+        logger.info(f"\n📏 CALCUL DU MONTANT EN {token}:")
+        logger.info(f"   📊 Prix MID Lighter: ${lighter_mid:.2f} (bid=${lighter_bid:.2f}, ask=${lighter_ask:.2f}) → Montant: {lighter_amount:.8f} {token}")
+    else:
+        # Fallback: utiliser le prix brut si bid/ask non disponibles
+        lighter_amount = position_value / lighter_price
+        logger.info(f"\n📏 CALCUL DU MONTANT EN {token}:")
+        logger.info(f"   📊 Prix brut Lighter: ${lighter_price:.2f} → Montant: {lighter_amount:.8f} {token}")
+    
+    if paradex_bid and paradex_ask:
+        paradex_mid = (paradex_bid + paradex_ask) / 2
+        paradex_amount = position_value / paradex_mid
+        logger.info(f"   📊 Prix MID Paradex: ${paradex_mid:.2f} (bid=${paradex_bid:.2f}, ask=${paradex_ask:.2f}) → Montant: {paradex_amount:.8f} {token}")
+    else:
+        # Fallback: utiliser le prix brut si bid/ask non disponibles
+        paradex_amount = position_value / paradex_price
+        logger.info(f"   📊 Prix brut Paradex: ${paradex_price:.2f} → Montant: {paradex_amount:.8f} {token}")
+    
     logger.info(f"   💰 Valeur de la position: ${position_value:.2f} pour chaque DEX")
     
-    # Mettre à jour les montants dans la config avec les prix réels
-    config['lighter']['market_price'] = lighter_price
+    # Mettre à jour les montants dans la config
+    # IMPORTANT: NE JAMAIS configurer market_price - laisser le fallback dans lighter_trader_config.py le calculer
+    # Le fallback utilisera automatiquement bid/ask avec marge de sécurité
     config['lighter']['amount'] = lighter_amount
-    config['paradex']['market_price'] = paradex_price
     config['paradex']['amount'] = paradex_amount
+    
+    # S'assurer que bid/ask sont présents pour le fallback
+    if 'bid' not in config['lighter'] or config['lighter'].get('bid') is None:
+        # Si bid/ask ne sont pas dans la config, essayer de les récupérer depuis les prix récupérés
+        # Mais normalement ils devraient déjà être là depuis create_trade_config_from_signal
+        logger.warning("   ⚠️ bid/ask Lighter non présents dans la config - le fallback pourrait ne pas fonctionner")
+    
+    if 'bid' not in config['paradex'] or config['paradex'].get('bid') is None:
+        logger.warning("   ⚠️ bid/ask Paradex non présents dans la config - le fallback pourrait ne pas fonctionner")
     
     logger.info(f"   ✅ Montant Lighter: {lighter_amount:.8f} {token} (valeur: ${position_value:.2f})")
     logger.info(f"   ✅ Montant Paradex: {paradex_amount:.8f} {token} (valeur: ${position_value:.2f})")

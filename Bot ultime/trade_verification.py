@@ -420,6 +420,22 @@ class TradeVerification:
                             except (ValueError, TypeError):
                                 liquidation_price = 0
                         
+                        # IMPORTANT: Lighter retourne toujours des positions positives
+                        # Pour déterminer si c'est LONG ou SHORT, on utilise le prix de liquidation :
+                        # - LONG : liquidation_price < entry_price (liquidé si le prix baisse)
+                        # - SHORT : liquidation_price > entry_price (liquidé si le prix monte)
+                        is_short = False
+                        if liquidation_price > 0 and entry_price > 0:
+                            if liquidation_price > entry_price:
+                                is_short = True
+                                # Convertir en négatif pour la cohérence avec le reste du code
+                                size = -abs(size)
+                                self.logger.info(f"📊 Position SHORT détectée (liquidation={liquidation_price:.2f} > entry={entry_price:.2f}), taille convertie: {size}")
+                            else:
+                                self.logger.info(f"📊 Position LONG détectée (liquidation={liquidation_price:.2f} < entry={entry_price:.2f}), taille: {size}")
+                        else:
+                            self.logger.warning(f"⚠️ Impossible de déterminer LONG/SHORT (liquidation={liquidation_price}, entry={entry_price}), supposé LONG")
+                        
                         positions.append({
                             "market_index": market_id,  # Utiliser market_id comme market_index
                             "market_id": market_id,
@@ -959,6 +975,22 @@ class TradeVerification:
                                 liquidation_price = float(liq_str) if liq_str and liq_str != '0' else 0
                             except (ValueError, TypeError):
                                 liquidation_price = 0
+                        
+                        # IMPORTANT: Lighter retourne toujours des positions positives
+                        # Pour déterminer si c'est LONG ou SHORT, on utilise le prix de liquidation :
+                        # - LONG : liquidation_price < entry_price (liquidé si le prix baisse)
+                        # - SHORT : liquidation_price > entry_price (liquidé si le prix monte)
+                        is_short = False
+                        if liquidation_price > 0 and entry_price > 0:
+                            if liquidation_price > entry_price:
+                                is_short = True
+                                # Convertir en négatif pour la cohérence avec le reste du code
+                                size = -abs(size)
+                                self.logger.info(f"📊 Position SHORT détectée (liquidation={liquidation_price:.2f} > entry={entry_price:.2f}), taille convertie: {size}")
+                            else:
+                                self.logger.info(f"📊 Position LONG détectée (liquidation={liquidation_price:.2f} < entry={entry_price:.2f}), taille: {size}")
+                        else:
+                            self.logger.warning(f"⚠️ Impossible de déterminer LONG/SHORT (liquidation={liquidation_price}, entry={entry_price}), supposé LONG")
                         
                         positions.append({
                             "market_index": market_id,  # Utiliser market_id comme market_index
