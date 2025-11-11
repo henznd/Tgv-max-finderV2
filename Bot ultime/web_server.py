@@ -46,7 +46,7 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             
             if parsed_path.path == '/' or parsed_path.path == '/index.html':
                 self.serve_html()
-            elif parsed_path.path == '/strategy.html':
+            elif parsed_path.path == '/strategy' or parsed_path.path == '/strategy.html':
                 self.serve_strategy_html()
             elif parsed_path.path == '/api/config':
                 self.get_config()
@@ -56,9 +56,9 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 self.get_logs()
             elif parsed_path.path == '/api/health':
                 self.get_health()
-            elif parsed_path.path == '/api/status-strategy':
+            elif parsed_path.path == '/api/strategy-status' or parsed_path.path == '/api/status-strategy':
                 self.get_strategy_status()
-            elif parsed_path.path == '/api/logs-strategy':
+            elif parsed_path.path == '/api/strategy/logs' or parsed_path.path == '/api/logs-strategy':
                 self.get_strategy_logs()
             else:
                 self.send_error(404, "Not Found")
