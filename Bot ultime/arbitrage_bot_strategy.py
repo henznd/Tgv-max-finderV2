@@ -787,9 +787,9 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         # Log de fermeture
                         closed_trade = position_before
                         logger.info("")
-                                logger.info("=" * 80)
-                                logger.info("📉 POSITION FERMÉE")
-                                logger.info("=" * 80)
+                        logger.info("=" * 80)
+                        logger.info("📉 POSITION FERMÉE")
+                        logger.info("=" * 80)
                                 logger.info(f"   Direction: {closed_trade.direction}")
                                 logger.info(f"   Raison: {exit_reason}")
                                 z_score_entry_used = closed_trade.entry_z
