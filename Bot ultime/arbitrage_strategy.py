@@ -19,6 +19,7 @@ class StrategyParams:
     entry_z: float = 1.0  # Seuil d'entrée (z-score)
     exit_spread_threshold: float = 10.0  # Seuil de sortie : convergence minimale du spread en $ (ex: sortie si spread converge d'au moins 10$)
     stop_z: float = 4.0   # Stop loss (z-score)
+    min_spread: float = 5.0  # Spread minimum favorable pour entrer (en $)
     window: int = 60      # Fenêtre glissante (observations)
     min_duration_s: int = 4  # Durée minimale de confirmation (secondes)
     max_hold: int = 240   # Durée maximale de position (observations)
@@ -118,11 +119,19 @@ class ArbitrageStrategy:
         
         return z_score_short, z_score_long
     
-    def should_enter_position(self, z_score_short: float, z_score_long: float, current_time: datetime) -> Tuple[bool, str]:
+    def should_enter_position(self, z_score_short: float, z_score_long: float, 
+                             current_spread_PL: float, current_spread_LP: float,
+                             current_time: datetime) -> Tuple[bool, str]:
         """
         Détermine si on doit entrer en position en utilisant les 2 Z-scores séparés
         z_score_short: basé sur spread_PL (pour détecter short_spread)
         z_score_long: basé sur spread_LP (pour détecter long_spread)
+        current_spread_PL: spread actuel Paradex-Lighter
+        current_spread_LP: spread actuel Lighter-Paradex
+        
+        STRATÉGIE D'ARBITRAGE PUR:
+        - N'entre QUE si le spread est FAVORABLE (positif = on gagne de l'argent)
+        - ET si le Z-score indique une opportunité exceptionnelle
         
         Le signal doit être maintenu pendant min_duration_s secondes consécutives
         pour éviter les faux signaux causés par des gros traders
@@ -131,18 +140,22 @@ class ArbitrageStrategy:
         if self.current_position is not None:
             return False, ""
         
-        # Déterminer la direction du signal actuel en utilisant les vrais spreads exploitables
+        # Déterminer la direction du signal actuel
         current_direction = None
         active_z_score = None
         
-        # Pour short_spread: on vend Paradex et achète Lighter → coût = spread_PL
-        # Signal si z_score_short est élevé (spread_PL anormalement négatif = Paradex trop cher)
-        if z_score_short >= self.params.entry_z:
+        # Pour short_spread: VENDRE Paradex (bid) + ACHETER Lighter (ask)
+        # Gain immédiat = spread_PL = Paradex_bid - Lighter_ask
+        # N'entrer QUE si spread_PL > min_spread (Paradex plus cher)
+        # ET Z-score élevé (opportunité exceptionnelle)
+        if z_score_short >= self.params.entry_z and current_spread_PL >= self.params.min_spread:
             current_direction = 'short_spread'
             active_z_score = z_score_short
-        # Pour long_spread: on vend Lighter et achète Paradex → coût = spread_LP
-        # Signal si z_score_long est élevé (spread_LP anormalement positif = Lighter trop cher)
-        elif z_score_long >= self.params.entry_z:
+        # Pour long_spread: VENDRE Lighter (bid) + ACHETER Paradex (ask)
+        # Gain immédiat = spread_LP = Lighter_bid - Paradex_ask
+        # N'entrer QUE si spread_LP > min_spread (Lighter plus cher)
+        # ET Z-score élevé (opportunité exceptionnelle)
+        elif z_score_long >= self.params.entry_z and current_spread_LP >= self.params.min_spread:
             current_direction = 'long_spread'
             active_z_score = z_score_long
         
@@ -155,7 +168,8 @@ class ArbitrageStrategy:
                 
                 if duration_seconds >= self.params.min_duration_s:
                     # Signal confirmé pendant assez longtemps
-                    logger.info(f"🎯 Signal d'entrée validé: {current_direction} | z={active_z_score:.2f} | durée={duration_seconds:.1f}s")
+                    spread_value = current_spread_PL if current_direction == 'short_spread' else current_spread_LP
+                    logger.info(f"🎯 Signal d'entrée validé: {current_direction} | z={active_z_score:.2f} | spread_favorable={spread_value:.2f}$ | durée={duration_seconds:.1f}s")
                     return True, current_direction
                 else:
                     # Signal en cours de validation
@@ -164,7 +178,8 @@ class ArbitrageStrategy:
                 # Nouveau signal ou changement de direction
                 self.signal_start_time = current_time
                 self.signal_direction = current_direction
-                logger.info(f"🔔 Nouveau signal détecté: {current_direction} | z={active_z_score:.2f} | Attente validation ({self.params.min_duration_s}s)")
+                spread_value = current_spread_PL if current_direction == 'short_spread' else current_spread_LP
+                logger.info(f"🔔 Nouveau signal détecté: {current_direction} | z={active_z_score:.2f} | spread_favorable={spread_value:.2f}$ | Attente validation ({self.params.min_duration_s}s)")
         else:
             # Signal n'est plus valide (z-score en dessous du seuil)
             # Réinitialiser seulement si on avait un signal en cours
@@ -416,7 +431,8 @@ class ArbitrageStrategy:
         
         # Vérifier entrée en position
         if self.current_position is None:
-            should_enter, direction = self.should_enter_position(z_score_short, z_score_long, timestamp)
+            should_enter, direction = self.should_enter_position(z_score_short, z_score_long, 
+                                                                 spread_PL, spread_LP, timestamp)
             if should_enter:
                 self.enter_position(z_score_short, z_score_long, direction, timestamp, spread_PL, spread_LP)
         

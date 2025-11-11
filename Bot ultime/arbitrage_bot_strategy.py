@@ -827,7 +827,8 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
             # Si pas de position, chercher entrée
             elif not has_real_position:
                 # Pas de position réelle → chercher entrée
-                should_enter, enter_direction = strategy.should_enter_position(z_score_short, z_score_long, current_time)
+                should_enter, enter_direction = strategy.should_enter_position(z_score_short, z_score_long, 
+                                                                               spread_PL, spread_LP, current_time)
                 
                 if should_enter:
                     # Signal d'entrée confirmé → Créer position virtuelle et exécuter trade
