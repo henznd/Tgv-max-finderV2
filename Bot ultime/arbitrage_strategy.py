@@ -282,16 +282,29 @@ class ArbitrageStrategy:
             delattr(self, '_last_exit_signal_duration')
         
         # Calculer PnL basé sur les spreads exploitables réels
+        # IMPORTANT: À l'entrée et à la sortie, on paye les coûts bid/ask
         if self.current_position.direction == 'short_spread':
-            # Short spread = vendre Paradex, acheter Lighter
-            # On utilise spread_PL : bid_paradex - ask_lighter
-            # Profit si spread_PL diminue (on vendait plus cher, on achète moins cher)
-            pnl = entry_spread_PL - spread_PL
+            # Short spread = SELL Paradex (bid), BUY Lighter (ask)
+            # Entrée : spread_PL = paradex_bid - lighter_ask (NÉGATIF = coût)
+            # Sortie : on fait l'INVERSE = SELL Lighter (bid), BUY Paradex (ask)
+            # Sortie : spread_LP = lighter_bid - paradex_ask
+            # 
+            # PnL = Convergence du spread - Coûts bid/ask
+            # Convergence = (entry_spread - exit_spread)
+            # Coûts = |entry_spread_PL| (coût d'entrée) + |spread_LP| (coût de sortie)
+            #
+            # Mais on peut simplifier en utilisant directement les spreads exploitables :
+            # PnL = entry_spread_PL - spread_LP
+            # (car à l'entrée on paye spread_PL, à la sortie on paye spread_LP)
+            pnl = entry_spread_PL - spread_LP
         else:  # long_spread
-            # Long spread = acheter Paradex, vendre Lighter
-            # On utilise spread_LP : bid_lighter - ask_paradex
-            # Profit si spread_LP diminue (on vendait Lighter plus cher, on achète Paradex moins cher)
-            pnl = entry_spread_LP - spread_LP
+            # Long spread = SELL Lighter (bid), BUY Paradex (ask)
+            # Entrée : spread_LP = lighter_bid - paradex_ask
+            # Sortie : on fait l'INVERSE = SELL Paradex (bid), BUY Lighter (ask)
+            # Sortie : spread_PL = paradex_bid - lighter_ask
+            # 
+            # PnL = entry_spread_LP - spread_PL
+            pnl = entry_spread_LP - spread_PL
         
         # PnL en pourcentage basé sur le spread initial
         entry_spread_value = entry_spread_PL if self.current_position.direction == 'short_spread' else entry_spread_LP

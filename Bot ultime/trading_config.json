@@ -1,20 +1,20 @@
 {
   "lighter": {
     "token": "BTC",
-    "amount": 0.008336996129251798,
-    "leverage": 49,
-    "margin": 18.0,
+    "amount": 0.02419507814042436,
+    "leverage": 50,
+    "margin": 50.0,
     "order_type": "sell",
-    "bid": 105790.1,
-    "ask": 105796.9
+    "bid": 103324.0,
+    "ask": 103329.6
   },
   "paradex": {
     "token": "BTC",
-    "amount": 0.008338107419781167,
-    "leverage": 49,
-    "margin": 18.0,
+    "amount": 0.024196916441756325,
+    "leverage": 50,
+    "margin": 50.0,
     "order_type": "buy",
-    "bid": 105774.0,
-    "ask": 105784.8
+    "bid": 103318.3,
+    "ask": 103319.6
   }
 }
