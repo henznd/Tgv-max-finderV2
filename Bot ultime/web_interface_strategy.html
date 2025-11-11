@@ -468,15 +468,23 @@
                     document.getElementById('stat-zscore').textContent = '-';
                     document.getElementById('stat-zscore').style.color = 'white';
                     
-                    // Effacer les logs
+                    // Effacer complètement les logs affichés
                     const logsContainer = document.getElementById('logs');
-                    logsContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666; font-size: 1.2em;">✨ Session réinitialisée - En attente de nouveaux événements...</div>';
+                    logsContainer.innerHTML = '<div style="text-align: center; padding: 40px; color: #666; font-size: 1.3em; line-height: 1.8;">' +
+                        '✨ <strong>Session réinitialisée avec succès</strong> ✨<br>' +
+                        '📦 ' + (data.archived_logs || 0) + ' fichier(s) archivé(s)<br>' +
+                        '🔄 En attente de nouveaux événements...<br>' +
+                        '<small style="color: #999; font-size: 0.9em; margin-top: 10px; display: block;">Les anciens logs sont sauvegardés dans logs/archives/</small>' +
+                        '</div>';
                     
-                    // Réinitialiser les timestamps
+                    // Réinitialiser complètement les timestamps et l'historique des logs
                     lastLogTimestamp = null;
                     displayedLogs.clear();
                     
+                    // Afficher une notification de succès
                     showAlert(`✅ Session réinitialisée ! ${data.archived_logs || 0} fichiers archivés.`, 'success');
+                    
+                    console.log('✅ Reset effectué: stats réinitialisées, logs effacés, timestamps réinitialisés');
                 } else {
                     showAlert('❌ Erreur lors de la réinitialisation: ' + (data.error || 'Erreur inconnue'), 'error');
                 }
