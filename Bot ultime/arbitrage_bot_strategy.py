@@ -711,7 +711,8 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 
                 if should_exit:
                     # Signal de sortie confirmé
-                    logger.info(f"🔍 Signal de sortie confirmé: {exit_reason} | z={z_score:.2f} | position={strategy.current_position.direction}")
+                    z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                    logger.info(f"🔍 Signal de sortie confirmé: {exit_reason} | z={z_score_active:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f}) | position={strategy.current_position.direction}")
                     
                     # IMPORTANT: Si une position réelle existe, on ne peut pas la fermer automatiquement
                     # On ne ferme la position virtuelle QUE si on peut fermer réellement
