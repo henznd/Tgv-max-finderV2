@@ -447,6 +447,45 @@
             }
         }
 
+        // Réinitialiser la session
+        async function resetSession() {
+            if (!confirm('⚠️ Voulez-vous vraiment réinitialiser la session ?\n\nCela va :\n✅ Archiver les logs actuels dans logs/archives/\n✅ Réinitialiser les statistiques à 0\n✅ Effacer l\'affichage des logs\n\n⚠️ Le bot continuera de tourner si il est actif.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/strategy/reset', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Réinitialiser les stats localement
+                    document.getElementById('stat-positions').textContent = '0';
+                    document.getElementById('stat-trades').textContent = '0';
+                    document.getElementById('stat-entries').textContent = '0';
+                    document.getElementById('stat-exits').textContent = '0';
+                    document.getElementById('stat-zscore').textContent = '-';
+                    document.getElementById('stat-zscore').style.color = 'white';
+                    
+                    // Effacer les logs
+                    const logsContainer = document.getElementById('logs');
+                    logsContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666; font-size: 1.2em;">✨ Session réinitialisée - En attente de nouveaux événements...</div>';
+                    
+                    // Réinitialiser les timestamps
+                    lastLogTimestamp = null;
+                    displayedLogs.clear();
+                    
+                    showAlert(`✅ Session réinitialisée ! ${data.archived_logs || 0} fichiers archivés.`, 'success');
+                } else {
+                    showAlert('❌ Erreur lors de la réinitialisation: ' + (data.error || 'Erreur inconnue'), 'error');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                showAlert('Erreur lors de la réinitialisation', 'error');
+            }
+        }
+
         // Vérifier le statut
         async function checkStatus() {
             try {
