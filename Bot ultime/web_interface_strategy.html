@@ -821,7 +821,7 @@
 
         // Reset session
         async function resetSession() {
-            if (!confirm('🔄 Réinitialiser la session?\n\n✅ Archiver les logs\n✅ Reset des stats\n✅ Effacer l\'affichage\n\n⚠️ Le bot continuera si actif.')) {
+            if (!confirm('🔄 Réinitialiser la session?\n\n✅ Archiver les logs\n✅ Reset des stats d\'affichage\n✅ Effacer les logs affichés\n\n⚠️ LE BOT CONTINUE DE TOURNER !\n⚠️ Seul l\'affichage est réinitialisé')) {
                 return;
             }
 
@@ -830,6 +830,7 @@
                 const data = await response.json();
                 
                 if (data.success) {
+                    // Réinitialiser les stats d'AFFICHAGE (pas les stats réelles du bot)
                     document.getElementById('stat-positions').textContent = '0';
                     document.getElementById('stat-trades').textContent = '0';
                     document.getElementById('stat-entries').textContent = '0';
@@ -840,15 +841,21 @@
                     logsContainer.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">✨</div>
-                            <div class="empty-state-text">Session réinitialisée</div>
+                            <div class="empty-state-text">Session réinitialisée - Affichage remis à zéro</div>
                             <small>📦 ${data.archived_logs || 0} fichiers archivés dans logs/archives/</small>
+                            <br><br>
+                            <small style="color: var(--success);">🤖 Le bot continue de tourner en arrière-plan</small>
+                            <small>Les nouveaux logs apparaîtront ici</small>
                         </div>
                     `;
                     
                     lastLogTimestamp = null;
                     displayedLogs.clear();
                     
-                    showAlert(`✅ Session réinitialisée! ${data.archived_logs || 0} fichiers archivés.`, 'success');
+                    showAlert(`✅ Session réinitialisée! Le bot continue de tourner. ${data.archived_logs || 0} fichiers archivés.`, 'success');
+                    
+                    // Vérifier immédiatement le statut pour rassurer l'utilisateur
+                    setTimeout(checkStatus, 500);
                 } else {
                     showAlert('❌ Erreur: ' + (data.error || 'Erreur inconnue'), 'error');
                 }
