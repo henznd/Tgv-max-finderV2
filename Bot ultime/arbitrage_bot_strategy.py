@@ -790,20 +790,20 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info("=" * 80)
                         logger.info("📉 POSITION FERMÉE")
                         logger.info("=" * 80)
-                                logger.info(f"   Direction: {closed_trade.direction}")
-                                logger.info(f"   Raison: {exit_reason}")
-                                z_score_entry_used = closed_trade.entry_z
-                                z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
-                                logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
-                                logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
-                                logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
-                                exit_spread_value = spread_PL if closed_trade.direction == 'short_spread' else spread_LP
-                                logger.info(f"   Spread sortie: {exit_spread_value:.2f} (PL={spread_PL:.2f}, LP={spread_LP:.2f})")
-                                if closed_trade.pnl is not None:
-                                    logger.info(f"   PnL: {closed_trade.pnl:.2f} ({closed_trade.pnl_percent:.2f}%)")
-                                logger.info(f"   Durée: {closed_trade.duration_obs} observations")
-                                logger.info("=" * 80)
-                                logger.info("")
+                        logger.info(f"   Direction: {closed_trade.direction}")
+                        logger.info(f"   Raison: {exit_reason}")
+                        z_score_entry_used = closed_trade.entry_z
+                        z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
+                        logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
+                        logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
+                        logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
+                        exit_spread_value = spread_PL if closed_trade.direction == 'short_spread' else spread_LP
+                        logger.info(f"   Spread sortie: {exit_spread_value:.2f} (PL={spread_PL:.2f}, LP={spread_LP:.2f})")
+                        if closed_trade.pnl is not None:
+                            logger.info(f"   PnL: {closed_trade.pnl:.2f} ({closed_trade.pnl_percent:.2f}%)")
+                        logger.info(f"   Durée: {closed_trade.duration_obs} observations")
+                        logger.info("=" * 80)
+                        logger.info("")
                 elif exit_reason:
                     # Signal de sortie en validation
                     z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
