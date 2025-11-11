@@ -726,7 +726,8 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info(f"   Direction: {strategy.current_position.direction}")
                         logger.info(f"   Raison: {exit_reason}")
                         logger.info(f"   Z-score entrée: {strategy.current_position.entry_z:.2f}")
-                        logger.info(f"   Z-score sortie: {z_score:.2f}")
+                        z_score_exit_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                        logger.info(f"   Z-score sortie: {z_score_exit_active:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
                         logger.info(f"   Spread entrée: {strategy.current_position.entry_spread:.2f}")
                         logger.info(f"   Spread sortie: {spread_net:.2f}")
                         logger.info("")
