@@ -521,20 +521,22 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
         logger.warning("⚠️ Le bot va attendre d'avoir assez de données...")
         # On continue quand même, la stratégie gérera le cas
     
-    # 2. Construire l'historique des spreads
-    spread_history = np.array([])
+    # 2. Construire les historiques des 2 spreads exploitables
+    spread_PL_history = np.array([])  # Pour short_spread (paradex_bid - lighter_ask)
+    spread_LP_history = np.array([])  # Pour long_spread (lighter_bid - paradex_ask)
+    
     for data in history_data:
-        spread_net, _, _ = calculate_spreads(
+        _, spread_PL, spread_LP = calculate_spreads(
             data['lighter_bid'], data['lighter_ask'], data['lighter_mid'],
             data['paradex_bid'], data['paradex_ask'], data['paradex_mid']
         )
-        spread_history = np.append(spread_history, spread_net)
+        spread_PL_history = np.append(spread_PL_history, spread_PL)
+        spread_LP_history = np.append(spread_LP_history, spread_LP)
     
-    logger.info(f"✅ Historique initial: {len(spread_history)} observations")
-    if len(spread_history) > 0:
-        logger.info(f"   Spread moyen: {spread_history.mean():.2f}")
-        logger.info(f"   Spread min: {spread_history.min():.2f}")
-        logger.info(f"   Spread max: {spread_history.max():.2f}")
+    logger.info(f"✅ Historique initial: {len(spread_PL_history)} observations")
+    if len(spread_PL_history) > 0:
+        logger.info(f"   Spread PL (short): moyen={spread_PL_history.mean():.2f}, min={spread_PL_history.min():.2f}, max={spread_PL_history.max():.2f}")
+        logger.info(f"   Spread LP (long):  moyen={spread_LP_history.mean():.2f}, min={spread_LP_history.min():.2f}, max={spread_LP_history.max():.2f}")
     
     # 3. Initialiser la stratégie
     params = StrategyParams(
@@ -605,18 +607,25 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 continue
             
             # ============================================
-            # ÉTAPE 2: Calculer spreads et z-score
+            # ÉTAPE 2: Calculer spreads et z-scores
             # ============================================
             spread_net, spread_PL, spread_LP = calculate_spreads(
                 lighter_bid, lighter_ask, lighter_mid,
                 paradex_bid, paradex_ask, paradex_mid
             )
             
-            # Mettre à jour l'historique
-            spread_history = np.append(spread_history, spread_net)
-            spread_history = spread_history[-window:]
+            # Mettre à jour les 2 historiques séparés
+            spread_PL_history = np.append(spread_PL_history, spread_PL)
+            spread_PL_history = spread_PL_history[-window:]
             
-            z_score = strategy.calculate_z_score(spread_net, spread_history)
+            spread_LP_history = np.append(spread_LP_history, spread_LP)
+            spread_LP_history = spread_LP_history[-window:]
+            
+            # Calculer les 2 z-scores séparés
+            z_score_short, z_score_long = strategy.calculate_z_scores(
+                spread_PL, spread_LP,
+                spread_PL_history, spread_LP_history
+            )
             
             # ============================================
             # ÉTAPE 3: Vérifier l'état réel (une seule fois par tick)
@@ -655,13 +664,15 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 
                 # Fallback : utiliser z-score si on n'a pas pu déterminer depuis la position réelle
                 if direction is None:
-                    direction = 'short_spread' if z_score > 0 else 'long_spread'
+                    # Utiliser le z-score le plus élevé pour déterminer la direction
+                    direction = 'short_spread' if z_score_short > z_score_long else 'long_spread'
                     logger.warning(f"⚠️ Impossible de déterminer direction depuis position réelle, utilisation z-score: {direction}")
                 
-                logger.info(f"🔄 Synchronisation: Position réelle détectée, création position virtuelle (direction: {direction}, z_ref: {z_score:.2f})")
-                strategy.enter_position(z_score, spread_net, current_time, spread_PL, spread_LP)
+                logger.info(f"🔄 Synchronisation: Position réelle détectée, création position virtuelle")
+                logger.info(f"   Direction: {direction}")
+                logger.info(f"   Z-score short: {z_score_short:.2f}, Z-score long: {z_score_long:.2f}")
+                strategy.enter_position(z_score_short, z_score_long, direction, current_time, spread_PL, spread_LP)
                 if strategy.current_position:
-                    strategy.current_position.direction = direction
                     # Marquer le tick de synchronisation pour éviter les fermetures immédiates
                     strategy.current_position._sync_tick = tick_count
             
@@ -681,17 +692,21 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 ignore_direction_change = is_synced_position and position_age < 10
                 
                 # Vérifier sortie (à CHAQUE TICK, pas seulement toutes les 10 secondes)
-                should_exit, exit_reason = strategy.should_exit_position(z_score, current_time)
+                should_exit, exit_reason = strategy.should_exit_position(z_score_short, z_score_long, current_time)
                 
-                # Ignorer direction_change si la position vient d'être synchronisée
-                if should_exit and exit_reason == 'direction_change' and ignore_direction_change:
-                    logger.debug(f"⏸️  Signal direction_change ignoré (position synchronisée récemment, age={position_age} ticks)")
+                # Ignorer inversion si la position vient d'être synchronisée
+                if should_exit and exit_reason == 'inversion' and ignore_direction_change:
+                    logger.debug(f"⏸️  Signal inversion ignoré (position synchronisée récemment, age={position_age} ticks)")
                     should_exit = False
                     exit_reason = None
                 
                 # Log détaillé toutes les 10 secondes pour confirmer qu'on cherche des sorties
                 if tick_count % 10 == 0:
-                    logger.info(f"🔍 Vérification sortie (toutes les 10s): z={z_score:.2f}, should_exit={should_exit}, exit_reason={exit_reason}, position_age={position_age}, is_synced={is_synced_position}")
+                    z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                    logger.info(f"🔍 Vérification sortie (toutes les 10s):")
+                    logger.info(f"   Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f} (actif={z_score_active:.2f})")
+                    logger.info(f"   Signal: should_exit={should_exit}, exit_reason={exit_reason}")
+                    logger.info(f"   Position: age={position_age}, is_synced={is_synced_position}")
                 # IMPORTANT: La vérification se fait à CHAQUE TICK, mais on log seulement toutes les 10 secondes pour éviter le spam
                 
                 if should_exit:
@@ -729,7 +744,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                 # Maintenant on peut fermer la position virtuelle
                                 entry_spread_PL = getattr(strategy.current_position, 'entry_spread_PL', spread_PL)
                                 entry_spread_LP = getattr(strategy.current_position, 'entry_spread_LP', spread_LP)
-                                strategy.exit_position(z_score, spread_net, current_time, exit_reason,
+                                strategy.exit_position(z_score_short, z_score_long, current_time, exit_reason,
                                                      spread_PL, spread_LP, entry_spread_PL, entry_spread_LP)
                                 
                                 # Log de fermeture
@@ -740,10 +755,13 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                 logger.info("=" * 80)
                                 logger.info(f"   Direction: {closed_trade.direction}")
                                 logger.info(f"   Raison: {exit_reason}")
-                                logger.info(f"   Z-score entrée: {closed_trade.entry_z:.2f}")
-                                logger.info(f"   Z-score sortie: {z_score:.2f}")
+                                z_score_entry_used = closed_trade.entry_z
+                                z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
+                                logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
+                                logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
                                 logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
-                                logger.info(f"   Spread sortie: {spread_net:.2f}")
+                                exit_spread_value = spread_PL if closed_trade.direction == 'short_spread' else spread_LP
+                                logger.info(f"   Spread sortie: {exit_spread_value:.2f} (PL={spread_PL:.2f}, LP={spread_LP:.2f})")
                                 if closed_trade.pnl is not None:
                                     logger.info(f"   PnL: {closed_trade.pnl:.2f} ({closed_trade.pnl_percent:.2f}%)")
                                 logger.info(f"   Durée: {closed_trade.duration_obs} observations")
@@ -763,29 +781,33 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         # Pas de position réelle → On peut fermer la position virtuelle
                         entry_spread_PL = getattr(strategy.current_position, 'entry_spread_PL', spread_PL)
                         entry_spread_LP = getattr(strategy.current_position, 'entry_spread_LP', spread_LP)
-                        strategy.exit_position(z_score, spread_net, current_time, exit_reason,
+                        strategy.exit_position(z_score_short, z_score_long, current_time, exit_reason,
                                              spread_PL, spread_LP, entry_spread_PL, entry_spread_LP)
                         
                         # Log de fermeture
                         closed_trade = position_before
                         logger.info("")
-                        logger.info("=" * 80)
-                        logger.info("📉 POSITION FERMÉE")
-                        logger.info("=" * 80)
-                        logger.info(f"   Direction: {closed_trade.direction}")
-                        logger.info(f"   Raison: {exit_reason}")
-                        logger.info(f"   Z-score entrée: {closed_trade.entry_z:.2f}")
-                        logger.info(f"   Z-score sortie: {z_score:.2f}")
-                        logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
-                        logger.info(f"   Spread sortie: {spread_net:.2f}")
-                        if closed_trade.pnl is not None:
-                            logger.info(f"   PnL: {closed_trade.pnl:.2f} ({closed_trade.pnl_percent:.2f}%)")
-                        logger.info(f"   Durée: {closed_trade.duration_obs} observations")
-                        logger.info("=" * 80)
-                        logger.info("")
+                                logger.info("=" * 80)
+                                logger.info("📉 POSITION FERMÉE")
+                                logger.info("=" * 80)
+                                logger.info(f"   Direction: {closed_trade.direction}")
+                                logger.info(f"   Raison: {exit_reason}")
+                                z_score_entry_used = closed_trade.entry_z
+                                z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
+                                logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
+                                logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
+                                logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
+                                exit_spread_value = spread_PL if closed_trade.direction == 'short_spread' else spread_LP
+                                logger.info(f"   Spread sortie: {exit_spread_value:.2f} (PL={spread_PL:.2f}, LP={spread_LP:.2f})")
+                                if closed_trade.pnl is not None:
+                                    logger.info(f"   PnL: {closed_trade.pnl:.2f} ({closed_trade.pnl_percent:.2f}%)")
+                                logger.info(f"   Durée: {closed_trade.duration_obs} observations")
+                                logger.info("=" * 80)
+                                logger.info("")
                 elif exit_reason:
                     # Signal de sortie en validation
-                    logger.info(f"⏳ Signal de sortie en validation: {exit_reason} | z={z_score:.2f} | position={strategy.current_position.direction}")
+                    z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                    logger.info(f"⏳ Signal de sortie en validation: {exit_reason} | z={z_score_active:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f}) | position={strategy.current_position.direction}")
                 
                 # Mettre à jour la durée de la position
                 if strategy.current_position:
@@ -793,12 +815,15 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 
                 # Log périodique de surveillance (toutes les 10 secondes)
                 if tick_count % 10 == 0 and strategy.current_position:
-                    logger.info(f"👁️  Surveillance position: z={z_score:.2f} | direction={strategy.current_position.direction} | entry_z={strategy.current_position.entry_z:.2f}")
+                    z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                    logger.info(f"👁️  Surveillance position:")
+                    logger.info(f"   Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f} (actif={z_score_active:.2f})")
+                    logger.info(f"   Direction: {strategy.current_position.direction}, entry_z: {strategy.current_position.entry_z:.2f}")
             
             # Si pas de position, chercher entrée
             elif not has_real_position:
                 # Pas de position réelle → chercher entrée
-                should_enter, enter_direction = strategy.should_enter_position(z_score, current_time)
+                should_enter, enter_direction = strategy.should_enter_position(z_score_short, z_score_long, current_time)
                 
                 if should_enter:
                     # Signal d'entrée confirmé → Créer position virtuelle et exécuter trade
@@ -807,12 +832,12 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                     logger.info("🎯 SIGNAL D'ENTRÉE DÉTECTÉ")
                     logger.info("=" * 80)
                     logger.info(f"   Direction: {enter_direction}")
-                    logger.info(f"   Z-score: {z_score:.2f}")
-                    logger.info(f"   Spread net: {spread_net:.2f}")
+                    z_score_used = z_score_short if enter_direction == 'short_spread' else z_score_long
+                    logger.info(f"   Z-score utilisé: {z_score_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
                     spread_exploitable = spread_PL if enter_direction == 'short_spread' else spread_LP
-                    logger.info(f"   Spread exploitable: {spread_exploitable:.2f}")
-                    logger.info(f"   Prix Lighter: ${lighter_mid:.2f}")
-                    logger.info(f"   Prix Paradex: ${paradex_mid:.2f}")
+                    logger.info(f"   Spread exploitable (entrée): {spread_exploitable:.2f}$ (PL={spread_PL:.2f}, LP={spread_LP:.2f})")
+                    logger.info(f"   Prix Lighter: bid=${lighter_bid:.2f}, ask=${lighter_ask:.2f}, mid=${lighter_mid:.2f}")
+                    logger.info(f"   Prix Paradex: bid=${paradex_bid:.2f}, ask=${paradex_ask:.2f}, mid=${paradex_mid:.2f}")
                     logger.info(f"   Token: {token}")
                     logger.info(f"   Marge: ${margin}, Levier: {leverage}x")
                     logger.info("=" * 80)
@@ -907,7 +932,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                         if strategy.current_position:
                                             entry_spread_PL = getattr(strategy.current_position, 'entry_spread_PL', spread_PL)
                                             entry_spread_LP = getattr(strategy.current_position, 'entry_spread_LP', spread_LP)
-                                            strategy.exit_position(z_score, spread_net, current_time, "direction_change",
+                                            strategy.exit_position(z_score_short, z_score_long, current_time, "direction_change",
                                                                  spread_PL, spread_LP, entry_spread_PL, entry_spread_LP)
                                         
                                         # NE PAS ouvrir immédiatement une nouvelle position
@@ -983,7 +1008,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                         if strategy.current_position:
                                             entry_spread_PL = getattr(strategy.current_position, 'entry_spread_PL', spread_PL)
                                             entry_spread_LP = getattr(strategy.current_position, 'entry_spread_LP', spread_LP)
-                                            strategy.exit_position(z_score, spread_net, current_time, "direction_change",
+                                            strategy.exit_position(z_score_short, z_score_long, current_time, "direction_change",
                                                                  spread_PL, spread_LP, entry_spread_PL, entry_spread_LP)
                                         
                                         # Continuer pour ouvrir la nouvelle position (le code continue après ce bloc)
@@ -1034,9 +1059,8 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info("=" * 80)
                         logger.info("")
                         # Créer la position virtuelle dans la stratégie pour suivre la sortie
-                        strategy.enter_position(z_score, spread_net, current_time, spread_PL, spread_LP)
+                        strategy.enter_position(z_score_short, z_score_long, enter_direction, current_time, spread_PL, spread_LP)
                         if strategy.current_position:
-                            strategy.current_position.direction = enter_direction
                             # Marquer le tick de création pour éviter les fermetures immédiates
                             strategy.current_position._sync_tick = tick_count
                         logger.info("📌 Position réelle créée - La stratégie va maintenant gérer sa sortie")
@@ -1051,19 +1075,21 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
             # ============================================
             # ÉTAPE 6: Logs périodiques
             # ============================================
-            # Log le Z-score à chaque tick pour mise à jour en temps réel sur la page web
-            logger.info(f"⏱️  Tick {tick_count} | Z-score: {z_score:.2f} | Spread: {spread_net:.2f}")
+            # Log les Z-scores à chaque tick pour mise à jour en temps réel sur la page web
+            logger.info(f"⏱️  Tick {tick_count} | Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f} | Spreads: PL={spread_PL:.2f}, LP={spread_LP:.2f}")
             
             # Log périodique détaillé (toutes les 60 secondes)
             if tick_count % 60 == 0:
                 position_info = "Non"
                 if strategy.current_position and strategy.current_position.status == 'open':
-                    position_info = f"Oui ({strategy.current_position.direction}, entry_z={strategy.current_position.entry_z:.2f})"
+                    z_score_active = z_score_short if strategy.current_position.direction == 'short_spread' else z_score_long
+                    position_info = f"Oui ({strategy.current_position.direction}, entry_z={strategy.current_position.entry_z:.2f}, current_z={z_score_active:.2f})"
                 
                 real_position_info = "Position réelle détectée" if has_real_position else "Aucune position réelle"
                 
                 logger.info("")
-                logger.info(f"📊 Tick {tick_count} | Spread: {spread_net:.2f} | Z-score: {z_score:.2f}")
+                logger.info(f"📊 Tick {tick_count} | Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f}")
+                logger.info(f"   Spreads exploitables: PL={spread_PL:.2f}, LP={spread_LP:.2f}")
                 logger.info(f"   Position stratégie: {position_info}")
                 logger.info(f"   Position réelle: {real_position_info}")
                 if has_real_position:

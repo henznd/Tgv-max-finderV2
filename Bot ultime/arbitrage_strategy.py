@@ -104,9 +104,26 @@ class ArbitrageStrategy:
         
         return z_score
     
-    def should_enter_position(self, z_score: float, current_time: datetime) -> Tuple[bool, str]:
+    def calculate_z_scores(self, current_spread_PL: float, current_spread_LP: float,
+                          spread_PL_history: np.ndarray, spread_LP_history: np.ndarray) -> Tuple[float, float]:
         """
-        Détermine si on doit entrer en position
+        Calcule les deux z-scores séparés pour les spreads exploitables
+        
+        Returns:
+            z_score_short: Z-score pour short_spread (basé sur spread_PL)
+            z_score_long: Z-score pour long_spread (basé sur spread_LP)
+        """
+        z_score_short = self.calculate_z_score(current_spread_PL, spread_PL_history)
+        z_score_long = self.calculate_z_score(current_spread_LP, spread_LP_history)
+        
+        return z_score_short, z_score_long
+    
+    def should_enter_position(self, z_score_short: float, z_score_long: float, current_time: datetime) -> Tuple[bool, str]:
+        """
+        Détermine si on doit entrer en position en utilisant les 2 Z-scores séparés
+        z_score_short: basé sur spread_PL (pour détecter short_spread)
+        z_score_long: basé sur spread_LP (pour détecter long_spread)
+        
         Le signal doit être maintenu pendant min_duration_s secondes consécutives
         pour éviter les faux signaux causés par des gros traders
         """
@@ -114,12 +131,20 @@ class ArbitrageStrategy:
         if self.current_position is not None:
             return False, ""
         
-        # Déterminer la direction du signal actuel
+        # Déterminer la direction du signal actuel en utilisant les vrais spreads exploitables
         current_direction = None
-        if z_score >= self.params.entry_z:
+        active_z_score = None
+        
+        # Pour short_spread: on vend Paradex et achète Lighter → coût = spread_PL
+        # Signal si z_score_short est élevé (spread_PL anormalement négatif = Paradex trop cher)
+        if z_score_short >= self.params.entry_z:
             current_direction = 'short_spread'
-        elif z_score <= -self.params.entry_z:
+            active_z_score = z_score_short
+        # Pour long_spread: on vend Lighter et achète Paradex → coût = spread_LP
+        # Signal si z_score_long est élevé (spread_LP anormalement positif = Lighter trop cher)
+        elif z_score_long >= self.params.entry_z:
             current_direction = 'long_spread'
+            active_z_score = z_score_long
         
         # Si le signal est valide
         if current_direction is not None:
@@ -130,61 +155,66 @@ class ArbitrageStrategy:
                 
                 if duration_seconds >= self.params.min_duration_s:
                     # Signal confirmé pendant assez longtemps
-                    logger.info(f"🎯 Signal d'entrée validé: {current_direction} | z={z_score:.2f} | durée={duration_seconds:.1f}s")
+                    logger.info(f"🎯 Signal d'entrée validé: {current_direction} | z={active_z_score:.2f} | durée={duration_seconds:.1f}s")
                     return True, current_direction
                 else:
                     # Signal en cours de validation
-                    logger.debug(f"⏳ Signal en validation: {current_direction} | z={z_score:.2f} | durée={duration_seconds:.1f}s/{self.params.min_duration_s}s")
+                    logger.debug(f"⏳ Signal en validation: {current_direction} | z={active_z_score:.2f} | durée={duration_seconds:.1f}s/{self.params.min_duration_s}s")
             else:
                 # Nouveau signal ou changement de direction
                 self.signal_start_time = current_time
                 self.signal_direction = current_direction
-                logger.info(f"🔔 Nouveau signal détecté: {current_direction} | z={z_score:.2f} | Attente validation ({self.params.min_duration_s}s)")
+                logger.info(f"🔔 Nouveau signal détecté: {current_direction} | z={active_z_score:.2f} | Attente validation ({self.params.min_duration_s}s)")
         else:
             # Signal n'est plus valide (z-score en dessous du seuil)
             # Réinitialiser seulement si on avait un signal en cours
             if self.signal_start_time is not None:
-                logger.debug(f"❌ Signal annulé: z={z_score:.2f} < seuil {self.params.entry_z}")
+                logger.debug(f"❌ Signal annulé: z_short={z_score_short:.2f}, z_long={z_score_long:.2f} < seuil {self.params.entry_z}")
             self.signal_start_time = None
             self.signal_direction = None
         
         return False, ""
     
-    def should_exit_position(self, z_score: float, current_time: datetime) -> Tuple[bool, str]:
+    def should_exit_position(self, z_score_short: float, z_score_long: float, current_time: datetime) -> Tuple[bool, str]:
         """
-        Détermine si on doit sortir de position
+        Détermine si on doit sortir de position en surveillant le Z-score correspondant à la direction
+        
+        Pour short_spread: surveille z_score_short (basé sur spread_PL)
+        Pour long_spread: surveille z_score_long (basé sur spread_LP)
+        
+        Sortie si:
+        - Convergence: z_score revient vers zéro (< exit_z)
+        - Inversion: z_score change de direction (devient négatif)
+        - Stop loss: z_score dépasse stop_z
+        
         Le signal de sortie doit être maintenu pendant min_duration_s secondes consécutives
         pour éviter les faux signaux causés par des fluctuations temporaires
         """
         if self.current_position is None:
             return False, ""
         
-        # NOUVEAU: Sortie immédiate si changement de direction (z-score change de signe)
-        # Cela permet d'entrer rapidement dans la direction opposée
-        if self.current_position.direction == 'short_spread' and z_score < 0:
-            # Position short mais z-score négatif → Sortir immédiatement
-            # Pas besoin d'attendre 4 secondes car c'est un changement de direction clair
-            return True, "direction_change"
-        elif self.current_position.direction == 'long_spread' and z_score > 0:
-            # Position long mais z-score positif → Sortir immédiatement
-            return True, "direction_change"
+        # Sélectionner le Z-score à surveiller selon la direction de la position
+        if self.current_position.direction == 'short_spread':
+            z_score = z_score_short  # Surveiller spread_PL
+        else:  # long_spread
+            z_score = z_score_long   # Surveiller spread_LP
+        
+        # INVERSION: Sortie immédiate si le z-score devient négatif (inversion complète)
+        # Cela indique que le spread a complètement inversé sa direction
+        if z_score < 0:
+            # Le spread exploitable est devenu négatif → Sortir immédiatement
+            logger.info(f"🔄 Inversion détectée: z={z_score:.2f} < 0 (direction={self.current_position.direction})")
+            return True, "inversion"
         
         # Déterminer la raison potentielle de sortie
         current_exit_reason = None
         
-        # Vérifier stop loss
-        if self.current_position.direction == 'short_spread':
-            if z_score >= self.params.stop_z:
-                current_exit_reason = "stop_loss"
-            # Sortie normale : z-score revient vers zéro
-            elif z_score <= self.params.exit_z:
-                current_exit_reason = "normal_exit"
-        else:  # long_spread
-            if z_score <= -self.params.stop_z:
-                current_exit_reason = "stop_loss"
-            # Sortie normale : z-score revient vers zéro
-            elif z_score >= -self.params.exit_z:
-                current_exit_reason = "normal_exit"
+        # Vérifier stop loss (z-score trop élevé = spread continue de diverger)
+        if z_score >= self.params.stop_z:
+            current_exit_reason = "stop_loss"
+        # CONVERGENCE: Sortie normale si z-score revient vers zéro
+        elif z_score <= self.params.exit_z:
+            current_exit_reason = "convergence"
         
         # Vérifier durée maximale (pas de validation de 4 secondes pour max_duration)
         duration = len([t for t in self.trades if t.status == 'open']) if self.current_position else 0
@@ -212,11 +242,16 @@ class ArbitrageStrategy:
                     self.exit_signal_reason = None
                     # Stocker la durée dans un attribut temporaire pour exit_position
                     self._last_exit_signal_duration = validated_duration
+                    logger.info(f"✅ Signal de sortie validé: {current_exit_reason} | z={z_score:.2f} | durée={validated_duration:.1f}s")
                     return True, current_exit_reason
+                else:
+                    # Signal en cours de validation
+                    logger.debug(f"⏳ Signal de sortie en validation: {current_exit_reason} | z={z_score:.2f} | durée={duration_seconds:.1f}s/{self.params.min_duration_s}s")
             else:
                 # Nouveau signal de sortie ou changement de raison
                 self.exit_signal_start_time = current_time
                 self.exit_signal_reason = current_exit_reason
+                logger.info(f"🔔 Nouveau signal de sortie: {current_exit_reason} | z={z_score:.2f} | Attente validation ({self.params.min_duration_s}s)")
         else:
             # Signal de sortie n'est plus valide (z-score ne correspond plus aux critères)
             # Réinitialiser
@@ -225,17 +260,26 @@ class ArbitrageStrategy:
         
         return False, ""
     
-    def enter_position(self, z_score: float, spread: float, timestamp: datetime, 
-                      spread_PL: float, spread_LP: float):
-        """Ouvre une nouvelle position"""
-        direction = 'short_spread' if z_score > 0 else 'long_spread'
-        
+    def enter_position(self, z_score_short: float, z_score_long: float, direction: str,
+                      timestamp: datetime, spread_PL: float, spread_LP: float):
+        """
+        Ouvre une nouvelle position
+        z_score_short: Z-score basé sur spread_PL
+        z_score_long: Z-score basé sur spread_LP
+        direction: 'short_spread' ou 'long_spread'
+        """
         # Calculer la durée du signal AVANT de réinitialiser
         signal_duration = (timestamp - self.signal_start_time).total_seconds() if self.signal_start_time else 0
+        
+        # Sélectionner le z-score correspondant à la direction
+        z_score = z_score_short if direction == 'short_spread' else z_score_long
         
         # Stocker les spreads exploitables à l'entrée
         entry_spread_PL = spread_PL
         entry_spread_LP = spread_LP
+        
+        # Stocker le spread exploitable utilisé pour l'entrée
+        entry_spread_value = spread_PL if direction == 'short_spread' else spread_LP
         
         trade = Trade(
             entry_time=timestamp,
@@ -243,7 +287,7 @@ class ArbitrageStrategy:
             entry_z=z_score,
             exit_z=None,
             direction=direction,
-            entry_spread=spread,  # Spread net pour référence
+            entry_spread=entry_spread_value,  # Spread exploitable réel (plus besoin de spread_net)
             exit_spread=None,
             pnl=None,
             pnl_percent=None,
@@ -258,22 +302,30 @@ class ArbitrageStrategy:
         self.current_position = trade
         self.trades.append(trade)
         
-        spread_value = spread_PL if direction == 'short_spread' else spread_LP
-        logger.info(f"📈 Entrée en position: {direction} | z={z_score:.2f} | spread_net={spread:.2f} | spread_exploitable={spread_value:.2f} | signal_validé_pendant={signal_duration:.1f}s")
+        logger.info(f"📈 Entrée en position: {direction}")
+        logger.info(f"   Z-score utilisé: {z_score:.2f} (z_short={z_score_short:.2f}, z_long={z_score_long:.2f})")
+        logger.info(f"   Spread exploitable (entrée): {entry_spread_value:.2f}$")
+        logger.info(f"   Signal validé pendant: {signal_duration:.1f}s")
         
         # Réinitialiser le signal APRÈS avoir loggé
         self.signal_start_time = None
         self.signal_direction = None
     
-    def exit_position(self, z_score: float, spread: float, timestamp: datetime, reason: str, 
+    def exit_position(self, z_score_short: float, z_score_long: float, timestamp: datetime, reason: str, 
                       spread_PL: float, spread_LP: float, entry_spread_PL: float, entry_spread_LP: float):
         """
         Ferme la position actuelle
+        z_score_short: Z-score actuel basé sur spread_PL
+        z_score_long: Z-score actuel basé sur spread_LP
         spread_PL et spread_LP sont les spreads exploitables actuels
         entry_spread_PL et entry_spread_LP sont les spreads exploitables à l'entrée
         """
         if self.current_position is None:
             return
+        
+        # Sélectionner le z-score correspondant à la direction
+        z_score = z_score_short if self.current_position.direction == 'short_spread' else z_score_long
+        exit_spread_value = spread_PL if self.current_position.direction == 'short_spread' else spread_LP
         
         # Récupérer la durée du signal de sortie (stockée par should_exit_position)
         exit_signal_duration = getattr(self, '_last_exit_signal_duration', 0)
@@ -308,39 +360,54 @@ class ArbitrageStrategy:
         # Mettre à jour le trade
         self.current_position.exit_time = timestamp
         self.current_position.exit_z = z_score
-        self.current_position.exit_spread = spread
+        self.current_position.exit_spread = exit_spread_value
         self.current_position.pnl = pnl
         self.current_position.pnl_percent = pnl_percent
         self.current_position.duration_obs = len([t for t in self.trades if t.status == 'open'])
         self.current_position.status = 'stopped' if reason == 'stop_loss' else 'closed'
         
-        logger.info(f"📉 Sortie de position: {reason} | z={z_score:.2f} | spread={spread:.2f} | PnL={pnl:.2f} ({pnl_percent:.2f}%) | signal_validé_pendant={exit_signal_duration:.1f}s")
+        logger.info(f"📉 Sortie de position: {reason}")
+        logger.info(f"   Z-score utilisé: {z_score:.2f} (z_short={z_score_short:.2f}, z_long={z_score_long:.2f})")
+        logger.info(f"   Spread exploitable (sortie): {exit_spread_value:.2f}$")
+        logger.info(f"   PnL: {pnl:.2f}$ ({pnl_percent:.2f}%)")
+        logger.info(f"   Signal validé pendant: {exit_signal_duration:.1f}s")
         
         # Réinitialiser les variables de sortie APRÈS avoir loggé
         self.exit_signal_start_time = None
         self.exit_signal_reason = None
         self.current_position = None
     
-    def process_tick(self, spread: float, timestamp: datetime, spread_history: np.ndarray,
-                    spread_PL: float, spread_LP: float):
-        """Traite un nouveau tick de données"""
-        # Calculer z-score
-        z_score = self.calculate_z_score(spread, spread_history)
+    def process_tick(self, timestamp: datetime, 
+                    spread_PL: float, spread_LP: float,
+                    spread_PL_history: np.ndarray, spread_LP_history: np.ndarray):
+        """
+        Traite un nouveau tick de données en utilisant les 2 Z-scores séparés
+        
+        spread_PL: Spread exploitable pour short_spread (paradex_bid - lighter_ask)
+        spread_LP: Spread exploitable pour long_spread (lighter_bid - paradex_ask)
+        spread_PL_history: Historique de spread_PL
+        spread_LP_history: Historique de spread_LP
+        """
+        # Calculer les 2 z-scores séparés
+        z_score_short, z_score_long = self.calculate_z_scores(
+            spread_PL, spread_LP, 
+            spread_PL_history, spread_LP_history
+        )
         
         # Vérifier sortie de position
         if self.current_position is not None:
-            should_exit, reason = self.should_exit_position(z_score, timestamp)
+            should_exit, reason = self.should_exit_position(z_score_short, z_score_long, timestamp)
             if should_exit:
                 entry_spread_PL = getattr(self.current_position, 'entry_spread_PL', spread_PL)
                 entry_spread_LP = getattr(self.current_position, 'entry_spread_LP', spread_LP)
-                self.exit_position(z_score, spread, timestamp, reason,
+                self.exit_position(z_score_short, z_score_long, timestamp, reason,
                                  spread_PL, spread_LP, entry_spread_PL, entry_spread_LP)
         
         # Vérifier entrée en position
         if self.current_position is None:
-            should_enter, direction = self.should_enter_position(z_score, timestamp)
+            should_enter, direction = self.should_enter_position(z_score_short, z_score_long, timestamp)
             if should_enter:
-                self.enter_position(z_score, spread, timestamp, spread_PL, spread_LP)
+                self.enter_position(z_score_short, z_score_long, direction, timestamp, spread_PL, spread_LP)
         
         # Mettre à jour la durée des positions ouvertes
         if self.current_position is not None:
