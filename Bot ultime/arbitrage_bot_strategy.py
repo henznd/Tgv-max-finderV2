@@ -490,7 +490,7 @@ async def create_trade_config_from_signal(direction: str, token: str, config_bas
 
 
 async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: int = 50,
-                           entry_z: float = 1.0, exit_z: float = 0.5, stop_z: float = 4.0,
+                           entry_z: float = 1.0, exit_spread: float = 10.0, stop_z: float = 4.0,
                            window: int = 900, min_duration_s: int = 4):
     """
     Boucle principale de la stratégie automatique
@@ -692,7 +692,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 ignore_direction_change = is_synced_position and position_age < 10
                 
                 # Vérifier sortie (à CHAQUE TICK, pas seulement toutes les 10 secondes)
-                should_exit, exit_reason = strategy.should_exit_position(z_score_short, z_score_long, current_time)
+                should_exit, exit_reason = strategy.should_exit_position(z_score_short, z_score_long, spread_PL, spread_LP, current_time)
                 
                 # Ignorer inversion si la position vient d'être synchronisée
                 if should_exit and exit_reason == 'inversion' and ignore_direction_change:
@@ -1120,7 +1120,7 @@ def main():
     parser.add_argument('--margin', type=float, default=20, help='Marge à utiliser ($)')
     parser.add_argument('--leverage', type=int, default=50, help='Levier')
     parser.add_argument('--entry-z', type=float, default=1.0, help='Seuil d\'entrée (z-score)')
-    parser.add_argument('--exit-z', type=float, default=0.5, help='Seuil de sortie (z-score)')
+    parser.add_argument('--exit-spread', type=float, default=10.0, help='Seuil de sortie : convergence minimale du spread en $ (ex: sortie si spread converge d\'au moins 10$)')
     parser.add_argument('--stop-z', type=float, default=4.0, help='Stop loss (z-score)')
     parser.add_argument('--window', type=int, default=900, help='Fenêtre glissante (observations, 900 = 15 minutes à 1 obs/seconde)')
     parser.add_argument('--min-duration', type=int, default=4, help='Durée minimale de confirmation (secondes)')
@@ -1134,6 +1134,7 @@ def main():
             leverage=args.leverage,
             entry_z=args.entry_z,
             exit_z=args.exit_z,
+            exit_spread=args.exit_spread,
             stop_z=args.stop_z,
             window=args.window,
             min_duration_s=args.min_duration

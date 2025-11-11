@@ -17,7 +17,7 @@ logger = setup_logger("arbitrage_strategy")
 class StrategyParams:
     """Paramètres de la stratégie"""
     entry_z: float = 1.0  # Seuil d'entrée (z-score)
-    exit_z: float = 0.5   # Seuil de sortie (z-score)
+    exit_spread_threshold: float = 10.0  # Seuil de sortie : convergence minimale du spread en $ (ex: sortie si spread converge d'au moins 10$)
     stop_z: float = 4.0   # Stop loss (z-score)
     window: int = 60      # Fenêtre glissante (observations)
     min_duration_s: int = 4  # Durée minimale de confirmation (secondes)
@@ -175,17 +175,19 @@ class ArbitrageStrategy:
         
         return False, ""
     
-    def should_exit_position(self, z_score_short: float, z_score_long: float, current_time: datetime) -> Tuple[bool, str]:
+    def should_exit_position(self, z_score_short: float, z_score_long: float, 
+                            current_spread_PL: float, current_spread_LP: float,
+                            current_time: datetime) -> Tuple[bool, str]:
         """
-        Détermine si on doit sortir de position en surveillant le Z-score correspondant à la direction
+        Détermine si on doit sortir de position basé sur la CONVERGENCE DU SPREAD en dollars
         
-        Pour short_spread: surveille z_score_short (basé sur spread_PL)
-        Pour long_spread: surveille z_score_long (basé sur spread_LP)
+        Pour short_spread: surveille spread_PL
+        Pour long_spread: surveille spread_LP
         
         Sortie si:
-        - Convergence: z_score revient vers zéro (< exit_z)
-        - Inversion: z_score change de direction (devient négatif)
-        - Stop loss: z_score dépasse stop_z
+        - CONVERGENCE: Le spread a convergé d'au moins exit_spread_threshold dollars par rapport à l'entrée
+        - INVERSION: Le spread s'est inversé (changement de signe)
+        - STOP LOSS: Z-score dépasse stop_z (spread continue de diverger)
         
         Le signal de sortie doit être maintenu pendant min_duration_s secondes consécutives
         pour éviter les faux signaux causés par des fluctuations temporaires
@@ -193,17 +195,21 @@ class ArbitrageStrategy:
         if self.current_position is None:
             return False, ""
         
-        # Sélectionner le Z-score à surveiller selon la direction de la position
+        # Récupérer les spreads d'entrée et actuels selon la direction
         if self.current_position.direction == 'short_spread':
-            z_score = z_score_short  # Surveiller spread_PL
+            entry_spread = getattr(self.current_position, 'entry_spread_PL', self.current_position.entry_spread)
+            current_spread = current_spread_PL
+            z_score = z_score_short
         else:  # long_spread
-            z_score = z_score_long   # Surveiller spread_LP
+            entry_spread = getattr(self.current_position, 'entry_spread_LP', self.current_position.entry_spread)
+            current_spread = current_spread_LP
+            z_score = z_score_long
         
-        # INVERSION: Sortie immédiate si le z-score devient négatif (inversion complète)
-        # Cela indique que le spread a complètement inversé sa direction
-        if z_score < 0:
-            # Le spread exploitable est devenu négatif → Sortir immédiatement
-            logger.info(f"🔄 Inversion détectée: z={z_score:.2f} < 0 (direction={self.current_position.direction})")
+        # INVERSION: Sortie immédiate si le spread s'est inversé (changement de signe)
+        # Pour short_spread: entry négatif, si current devient positif = inversion
+        # Pour long_spread: entry positif, si current devient négatif = inversion
+        if (entry_spread < 0 and current_spread > 0) or (entry_spread > 0 and current_spread < 0):
+            logger.info(f"🔄 Inversion détectée: entry_spread={entry_spread:.2f}, current_spread={current_spread:.2f}")
             return True, "inversion"
         
         # Déterminer la raison potentielle de sortie
@@ -212,9 +218,14 @@ class ArbitrageStrategy:
         # Vérifier stop loss (z-score trop élevé = spread continue de diverger)
         if z_score >= self.params.stop_z:
             current_exit_reason = "stop_loss"
-        # CONVERGENCE: Sortie normale si z-score revient vers zéro
-        elif z_score <= self.params.exit_z:
-            current_exit_reason = "convergence"
+        else:
+            # CONVERGENCE: Vérifier si le spread a suffisamment convergé
+            # Convergence = réduction de l'écart absolu du spread
+            spread_convergence = abs(entry_spread) - abs(current_spread)
+            
+            if spread_convergence >= self.params.exit_spread_threshold:
+                logger.debug(f"✅ Convergence détectée: {spread_convergence:.2f}$ >= {self.params.exit_spread_threshold}$ (entry={entry_spread:.2f}, current={current_spread:.2f})")
+                current_exit_reason = "convergence"
         
         # Vérifier durée maximale (pas de validation de 4 secondes pour max_duration)
         duration = len([t for t in self.trades if t.status == 'open']) if self.current_position else 0
