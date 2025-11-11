@@ -541,7 +541,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
     # 3. Initialiser la stratégie
     params = StrategyParams(
         entry_z=entry_z,
-        exit_z=exit_z,
+        exit_spread_threshold=exit_spread,
         stop_z=stop_z,
         window=window,
         min_duration_s=min_duration_s,

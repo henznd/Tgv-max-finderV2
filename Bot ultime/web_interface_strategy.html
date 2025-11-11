@@ -386,11 +386,11 @@
             const token = document.getElementById('token').value;
             const margin = parseFloat(document.getElementById('margin').value);
             const leverage = parseInt(document.getElementById('leverage').value);
-            const entry_z = parseFloat(document.getElementById('entry_z').value);
-            const exit_z = parseFloat(document.getElementById('exit_z').value);
-            const stop_z = parseFloat(document.getElementById('stop_z').value);
+            const entry_z = parseFloat(document.getElementById('entry-z').value);
+            const exit_spread = parseFloat(document.getElementById('exit-spread').value);
+            const stop_z = parseFloat(document.getElementById('stop-z').value);
 
-            if (!confirm(`Lancer le bot avec ces paramètres?\nToken: ${token}\nMarge: $${margin}\nLevier: ${leverage}x\nEntry Z: ${entry_z}\nExit Z: ${exit_z}\nStop Z: ${stop_z}`)) {
+            if (!confirm(`Lancer le bot avec ces paramètres?\n\nToken: ${token}\nMarge: $${margin}\nLevier: ${leverage}x\n\nEntry Z-score: ${entry_z}\nConvergence sortie: $${exit_spread}\nStop loss Z: ${stop_z}`)) {
                 return;
             }
 
@@ -405,7 +405,7 @@
                         margin,
                         leverage,
                         entry_z,
-                        exit_z,
+                        exit_spread,
                         stop_z
                     })
                 });
