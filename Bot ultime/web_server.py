@@ -33,6 +33,7 @@ last_log_position = {}  # Pour suivre la position dans les fichiers de logs
 strategy_bot_running = False
 strategy_bot_process = None
 strategy_bot_thread = None
+session_reset_timestamp = None  # Timestamp du dernier reset de session
 strategy_last_log_position = {}  # Pour suivre la position dans les fichiers de logs
 
 class ArbitrageBotHandler(BaseHTTPRequestHandler):
@@ -430,6 +431,31 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     logger.error(f"Erreur lecture fichier log {log_file}: {e}")
             
+            # Filtrer les logs APRÈS le reset de session si un reset a eu lieu
+            if session_reset_timestamp is not None:
+                import re
+                from datetime import datetime
+                
+                filtered_by_reset = []
+                for line in all_lines:
+                    # Extraire le timestamp de la ligne
+                    timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                    if timestamp_match:
+                        try:
+                            line_timestamp = datetime.strptime(timestamp_match.group(1), '%Y-%m-%d %H:%M:%S')
+                            # Garder seulement les lignes APRÈS le reset
+                            if line_timestamp >= session_reset_timestamp:
+                                filtered_by_reset.append(line)
+                        except (ValueError, AttributeError):
+                            # Si on ne peut pas parser le timestamp, garder la ligne par défaut
+                            filtered_by_reset.append(line)
+                    else:
+                        # Pas de timestamp, garder la ligne par défaut
+                        filtered_by_reset.append(line)
+                
+                all_lines = filtered_by_reset
+                logger.debug(f"🔄 Filtrage post-reset: {len(all_lines)} lignes gardées après {session_reset_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
             # Calculer les statistiques
             stats = {
                 "positions": 0,
@@ -460,73 +486,103 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             
             stats["positions"] = 1 if has_open_position else 0
             
-            # Extraire le dernier Z-score depuis les logs
+            # Extraire le dernier Z-score depuis les logs (nouvelle version avec 2 Z-scores)
             current_z_score = None
             import re
             from datetime import datetime
             
-            # Trier les lignes par timestamp pour trouver le Z-score le plus récent
-            # Format de timestamp: "2025-11-10 01:09:37"
+            # Chercher les nouveaux patterns: "Z-scores: short=X.XX, long=Y.YY"
             lines_with_z = []
             for line in all_lines:
-                # Chercher les patterns: "Z-score: X.XX" ou "z=X.XX"
-                z_match = re.search(r'Z-score:\s*([+-]?\d+\.?\d*)', line)
-                if not z_match:
-                    z_match = re.search(r'z=([+-]?\d+\.?\d*)', line)
+                # Nouveau pattern: "Z-scores: short=X.XX, long=Y.YY"
+                z_match = re.search(r'Z-scores:\s*short=([+-]?\d+\.?\d*),\s*long=([+-]?\d+\.?\d*)', line)
                 if z_match:
-                    # Extraire le timestamp de la ligne
                     timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
                     if timestamp_match:
                         try:
                             timestamp = datetime.strptime(timestamp_match.group(1), '%Y-%m-%d %H:%M:%S')
-                            z_value = float(z_match.group(1))
-                            lines_with_z.append((timestamp, z_value, line))
+                            z_short = float(z_match.group(1))
+                            z_long = float(z_match.group(2))
+                            # Utiliser le Z-score le plus élevé pour l'affichage
+                            z_value = max(abs(z_short), abs(z_long))
+                            lines_with_z.append((timestamp, z_value, line, z_short, z_long))
                         except (ValueError, AttributeError):
                             continue
+                else:
+                    # Anciens patterns pour rétrocompatibilité
+                    z_match = re.search(r'Z-score:\s*([+-]?\d+\.?\d*)', line)
+                    if not z_match:
+                        z_match = re.search(r'z=([+-]?\d+\.?\d*)', line)
+                    if z_match:
+                        timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                        if timestamp_match:
+                            try:
+                                timestamp = datetime.strptime(timestamp_match.group(1), '%Y-%m-%d %H:%M:%S')
+                                z_value = float(z_match.group(1))
+                                lines_with_z.append((timestamp, z_value, line, None, None))
+                            except (ValueError, AttributeError):
+                                continue
             
             # Si on a trouvé des lignes avec Z-score, prendre la plus récente
             if lines_with_z:
                 lines_with_z.sort(key=lambda x: x[0], reverse=True)  # Trier par timestamp décroissant
                 most_recent = lines_with_z[0]
                 current_z_score = most_recent[1]
-                logger.debug(f"📊 Z-score extrait: {current_z_score} (timestamp: {most_recent[0]})")
+                if len(most_recent) > 3 and most_recent[3] is not None:
+                    logger.debug(f"📊 Z-scores extraits: short={most_recent[3]:.2f}, long={most_recent[4]:.2f} (max={current_z_score:.2f})")
+                else:
+                    logger.debug(f"📊 Z-score extrait: {current_z_score} (timestamp: {most_recent[0]})")
             
             if all_lines:
-                # Filtrer pour garder seulement les événements importants
-                important_keywords = [
-                    'BOT D\'ARBITRAGE',
-                    'Démarrage',
-                    'SIGNAL D\'ENTRÉE',
-                    'TRADES EXÉCUTÉS',
-                    'POSITION FERMÉE',
-                    'POSITION EXISTANTE FERMÉE',
-                    'CONDITIONS NON REMPLIES',
-                    'ÉCHEC DES TRADES',
-                    'Synchronisation',
-                    'Signal d\'entrée validé',
-                    'Nouveau signal détecté',
-                    'Signal de sortie détecté',
-                    'Signal de sortie en validation',
-                    'Surveillance position',
-                    '🔄 Synchronisation',
-                    '📉 POSITION',
-                    '🎯 SIGNAL',
-                    '✅ TRADES',
-                    '⚠️ CONDITIONS',
-                    '🔍 Signal de sortie',
-                    '⏳ Signal de sortie',
-                    '👁️  Surveillance'
+                # Filtrer pour garder UNIQUEMENT les événements critiques
+                # L'utilisateur veut juste savoir : bot lancé, entrée, sortie, PnL
+                critical_keywords = [
+                    '🤖 BOT D\'ARBITRAGE',  # Démarrage du bot
+                    '🎯 SIGNAL D\'ENTRÉE DÉTECTÉ',  # Signal d'entrée
+                    '✅ TRADES EXÉCUTÉS AVEC SUCCÈS',  # Entrée confirmée
+                    '📉 POSITION FERMÉE',  # Sortie avec PnL
+                    '❌ ÉCHEC DES TRADES',  # Erreur critique
+                    'PnL:',  # Ligne avec le PnL
+                    'Direction:',  # Direction du trade
+                    'Z-score',  # Z-score utilisé
+                    'Spread exploitable',  # Spread d'entrée/sortie
+                    'Raison:',  # Raison de sortie
                 ]
                 
                 filtered_logs = []
-                for line in all_lines:
-                    # Garder les lignes qui contiennent des mots-clés importants
-                    if any(keyword in line for keyword in important_keywords):
-                        filtered_logs.append(line)
+                current_block = []
+                in_important_block = False
                 
-                # IMPORTANT: Prendre les 100 dernières lignes filtrées (les plus récentes)
-                # Les lignes sont déjà dans l'ordre chronologique (du plus ancien au plus récent)
-                logs = filtered_logs[-100:] if len(filtered_logs) > 100 else filtered_logs
+                for i, line in enumerate(all_lines):
+                    # Détecter le début d'un bloc important
+                    if any(keyword in line for keyword in ['🤖 BOT', '🎯 SIGNAL D\'ENTRÉE', '📉 POSITION FERMÉE', '✅ TRADES']):
+                        # Si on était déjà dans un bloc, l'ajouter avant de commencer le nouveau
+                        if current_block:
+                            filtered_logs.extend(current_block)
+                            current_block = []
+                        in_important_block = True
+                        current_block.append(line)
+                    # Si on est dans un bloc important
+                    elif in_important_block:
+                        # Continuer à ajouter des lignes jusqu'à trouver une ligne vide ou un séparateur
+                        if line.strip() == '' or line.startswith('='):
+                            current_block.append(line)
+                            # Si c'est un séparateur de fin, arrêter le bloc
+                            if line.startswith('=') and len(current_block) > 3:
+                                filtered_logs.extend(current_block)
+                                current_block = []
+                                in_important_block = False
+                        else:
+                            # Garder les détails importants (Direction, PnL, Z-score, etc.)
+                            if any(keyword in line for keyword in critical_keywords):
+                                current_block.append(line)
+                
+                # Ajouter le dernier bloc si nécessaire
+                if current_block:
+                    filtered_logs.extend(current_block)
+                
+                # Prendre les 150 dernières lignes filtrées pour avoir assez de contexte
+                logs = filtered_logs[-150:] if len(filtered_logs) > 150 else filtered_logs
                 
                 # Debug: logger le nombre de logs trouvés
                 logger.debug(f"📊 Logs filtrés: {len(filtered_logs)} lignes, retournant les {len(logs)} dernières")
