@@ -442,8 +442,10 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             log_dir = os.path.join(os.path.dirname(__file__), 'logs')
             if not os.path.exists(log_dir):
                 self.send_json_response({
-                    "logs": [],
+                    "critical_logs": [],
+                    "all_logs": [],
                     "stats": {"positions": 0, "trades": 0, "entries": 0, "exits": 0},
+                    "z_score": None,
                     "timestamp": datetime.now().isoformat()
                 })
                 return
@@ -453,8 +455,10 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             
             if not log_files:
                 self.send_json_response({
-                    "logs": ["ℹ️ Aucun log disponible pour le moment."],
+                    "critical_logs": [],
+                    "all_logs": [],
                     "stats": {"positions": 0, "trades": 0, "entries": 0, "exits": 0},
+                    "z_score": None,
                     "timestamp": datetime.now().isoformat()
                 })
                 return
@@ -599,70 +603,69 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 else:
                     logger.debug(f"📊 Z-score extrait: {current_z_score} (timestamp: {most_recent[0]})")
             
+            # NOUVEAU SYSTÈME: Préparer 2 types de logs
+            critical_logs = []
+            all_logs_output = []
+            
             if all_lines:
-                # Filtrer pour garder UNIQUEMENT les événements critiques
-                # L'utilisateur veut juste savoir : bot lancé, entrée, sortie, PnL
-                # Filtrer uniquement les événements CRITIQUES (très restreint)
+                # ========== 1. LOGS CRITIQUES (événements importants uniquement) ==========
                 critical_keywords = [
-                '🤖 BOT D\'ARBITRAGE STRATÉGIE',  # Démarrage du bot
-                '✅ TRADES EXÉCUTÉS AVEC SUCCÈS',  # Entrée en position confirmée
-                '📉 POSITION FERMÉE',  # Sortie de position
-                'Direction:',  # Direction du trade (contexte entrée/sortie)
-                'PnL:',  # PnL réalisé (contexte sortie)
-                'Raison:',  # Raison de sortie (contexte sortie)
-                'Z-score entrée:',  # Z-score d'entrée (contexte)
-                'Z-score sortie:',  # Z-score de sortie (contexte)
-                'Spread entrée:',  # Spread d'entrée (contexte)
-                'Spread sortie:',  # Spread de sortie (contexte)
-            ]
+                    '🤖 BOT D\'ARBITRAGE',  # Démarrage
+                    '✅ TRADES EXÉCUTÉS',   # Entrée confirmée
+                    '📉 POSITION FERMÉE',    # Sortie
+                    'Direction:',           # Direction du trade
+                    'PnL:',                 # PnL réalisé
+                    'Raison:',              # Raison de sortie
+                    'Z-score',              # Z-scores
+                    'Spread',               # Spreads
+                    'Token:',               # Configuration
+                    'Marge:',               # Configuration
+                ]
                 
-                filtered_logs = []
                 current_block = []
-                in_important_block = False
+                in_block = False
                 
-                for i, line in enumerate(all_lines):
-                    # Détecter le début d'un bloc important
-                    if any(keyword in line for keyword in ['🤖 BOT', '🎯 SIGNAL D\'ENTRÉE', '📉 POSITION FERMÉE', '✅ TRADES']):
-                        # Si on était déjà dans un bloc, l'ajouter avant de commencer le nouveau
+                for line in all_lines:
+                    # Détecter début de bloc critique
+                    if any(keyword in line for keyword in ['🤖 BOT', '✅ TRADES', '📉 POSITION']):
                         if current_block:
-                            filtered_logs.extend(current_block)
-                            current_block = []
-                        in_important_block = True
-                        current_block.append(line)
-                    # Si on est dans un bloc important
-                    elif in_important_block:
-                        # Continuer à ajouter des lignes jusqu'à trouver une ligne vide ou un séparateur
+                            critical_logs.extend(current_block)
+                        current_block = [line]
+                        in_block = True
+                    elif in_block:
+                        # Continuer le bloc
                         if line.strip() == '' or line.startswith('='):
                             current_block.append(line)
-                            # Si c'est un séparateur de fin, arrêter le bloc
-                            if line.startswith('=') and len(current_block) > 3:
-                                filtered_logs.extend(current_block)
+                            # Fin de bloc
+                            if line.startswith('='):
+                                critical_logs.extend(current_block)
                                 current_block = []
-                                in_important_block = False
-                        else:
-                            # Garder les détails importants (Direction, PnL, Z-score, etc.)
-                            if any(keyword in line for keyword in critical_keywords):
-                                current_block.append(line)
+                                in_block = False
+                        elif any(keyword in line for keyword in critical_keywords):
+                            current_block.append(line)
                 
-                # Ajouter le dernier bloc si nécessaire
+                # Ajouter dernier bloc
                 if current_block:
-                    filtered_logs.extend(current_block)
+                    critical_logs.extend(current_block)
                 
-                # Prendre les 150 dernières lignes filtrées pour avoir assez de contexte
-                logs = filtered_logs[-150:] if len(filtered_logs) > 150 else filtered_logs
+                # Garder les 100 dernières lignes critiques
+                critical_logs = critical_logs[-100:] if len(critical_logs) > 100 else critical_logs
                 
-                # Debug: logger le nombre de logs trouvés
-                logger.debug(f"📊 Logs filtrés: {len(filtered_logs)} lignes, retournant les {len(logs)} dernières")
+                # ========== 2. TOUS LES LOGS (dernières 200 lignes) ==========
+                all_logs_output = all_lines[-200:] if len(all_lines) > 200 else all_lines
+                
+                logger.debug(f"📊 Logs: {len(critical_logs)} critiques, {len(all_logs_output)} totaux")
             else:
-                logs = ["ℹ️ Aucun log disponible pour le moment."]
+                critical_logs = []
+                all_logs_output = []
             
-            # Ajouter un timestamp pour éviter le cache du navigateur
+            # Réponse avec les 2 types de logs
             response = {
-                "logs": logs,
+                "critical_logs": critical_logs,
+                "all_logs": all_logs_output,
                 "stats": stats,
                 "z_score": current_z_score,
-                "timestamp": datetime.now().isoformat(),
-                "cache_buster": datetime.now().timestamp()
+                "timestamp": datetime.now().isoformat()
             }
             self.send_json_response(response)
         except Exception as e:
