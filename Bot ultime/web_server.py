@@ -87,12 +87,18 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 self.launch_bot()
             elif parsed_path.path == '/api/stop':
                 self.stop_bot()
+            # Routes stratégie (nouveau format avec /api/strategy/)
+            elif parsed_path.path == '/api/strategy/launch':
+                self.launch_strategy_bot()
+            elif parsed_path.path == '/api/strategy/stop':
+                self.stop_strategy_bot()
+            elif parsed_path.path == '/api/strategy/reset':
+                self.reset_strategy_session()
+            # Anciennes routes stratégie (rétrocompatibilité)
             elif parsed_path.path == '/api/launch-strategy':
                 self.launch_strategy_bot()
             elif parsed_path.path == '/api/stop-strategy':
                 self.stop_strategy_bot()
-            elif parsed_path.path == '/api/strategy/reset':
-                self.reset_strategy_session()
             else:
                 self.send_error(404, "Not Found")
         except Exception as e:
