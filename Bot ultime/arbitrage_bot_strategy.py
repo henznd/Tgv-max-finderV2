@@ -1133,7 +1133,6 @@ def main():
             margin=args.margin,
             leverage=args.leverage,
             entry_z=args.entry_z,
-            exit_z=args.exit_z,
             exit_spread=args.exit_spread,
             stop_z=args.stop_z,
             window=args.window,
