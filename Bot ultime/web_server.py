@@ -370,6 +370,70 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             "timestamp": datetime.now().isoformat()
         })
     
+    def reset_strategy_session(self):
+        """Réinitialise la session : archive les logs et reset les stats"""
+        global session_reset_timestamp
+        try:
+            from datetime import datetime
+            import shutil
+            import os
+            
+            # Enregistrer le timestamp du reset
+            session_reset_timestamp = datetime.now()
+            
+            logger.info("=" * 80)
+            logger.info("🔄 RESET DE SESSION")
+            logger.info("=" * 80)
+            logger.info(f"⏰ Timestamp: {session_reset_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("📊 Les statistiques ont été réinitialisées")
+            logger.info("📝 Les anciens logs sont toujours accessibles mais ne seront plus affichés")
+            logger.info("✨ Nouvelle session démarrée")
+            logger.info("=" * 80)
+            logger.info("")
+            
+            # Optionnel : archiver les anciens logs
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            log_dir = os.path.join(script_dir, 'logs')
+            archive_dir = os.path.join(log_dir, 'archives')
+            
+            # Créer le dossier archives si nécessaire
+            if not os.path.exists(archive_dir):
+                os.makedirs(archive_dir)
+            
+            # Copier (pas déplacer) les logs actuels dans archives avec timestamp
+            import glob
+            log_files = glob.glob(os.path.join(log_dir, 'arbitrage_bot_strategy_*.log'))
+            archived_count = 0
+            if log_files:
+                archive_timestamp = session_reset_timestamp.strftime('%Y%m%d_%H%M%S')
+                for log_file in log_files:
+                    if os.path.getsize(log_file) > 0:  # Seulement si non vide
+                        base_name = os.path.basename(log_file)
+                        archive_name = f"archived_{archive_timestamp}_{base_name}"
+                        archive_path = os.path.join(archive_dir, archive_name)
+                        try:
+                            shutil.copy2(log_file, archive_path)
+                            logger.info(f"📦 Archivé: {archive_name}")
+                            archived_count += 1
+                        except Exception as e:
+                            logger.warning(f"⚠️ Impossible d'archiver {base_name}: {e}")
+            
+            self.send_json_response({
+                "success": True,
+                "message": "Session réinitialisée avec succès",
+                "reset_timestamp": session_reset_timestamp.isoformat(),
+                "archived_logs": archived_count
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur lors du reset de session: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_json_response({
+                "success": False,
+                "error": str(e)
+            }, status=500)
+    
     def get_strategy_logs(self):
         """Récupère les logs filtrés du bot stratégie (événements importants uniquement)"""
         try:
