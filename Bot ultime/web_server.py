@@ -602,8 +602,8 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             if all_lines:
                 # Filtrer pour garder UNIQUEMENT les événements critiques
                 # L'utilisateur veut juste savoir : bot lancé, entrée, sortie, PnL
-            # Filtrer uniquement les événements CRITIQUES (très restreint)
-            critical_keywords = [
+                # Filtrer uniquement les événements CRITIQUES (très restreint)
+                critical_keywords = [
                 '🤖 BOT D\'ARBITRAGE STRATÉGIE',  # Démarrage du bot
                 '✅ TRADES EXÉCUTÉS AVEC SUCCÈS',  # Entrée en position confirmée
                 '📉 POSITION FERMÉE',  # Sortie de position
