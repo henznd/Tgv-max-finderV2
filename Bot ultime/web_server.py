@@ -882,7 +882,7 @@ def run_strategy_bot_async(params):
             '--margin', str(params['margin']),
             '--leverage', str(params['leverage']),
             '--entry-z', str(params['entry_z']),
-            '--exit-z', str(params['exit_z']),
+            '--exit-spread', str(params['exit_spread']),
             '--stop-z', str(params['stop_z'])
         ]
         
