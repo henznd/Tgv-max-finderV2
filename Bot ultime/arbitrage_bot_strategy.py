@@ -499,7 +499,9 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
         token: Token à trader
         margin: Marge à utiliser
         leverage: Levier
-        entry_z, exit_z, stop_z: Paramètres de stratégie
+        entry_z: Z-score d'entrée minimum
+        exit_spread: Convergence minimale du spread en $ pour sortir
+        stop_z: Z-score maximum (stop loss)
         window: Taille de la fenêtre glissante
         min_duration_s: Durée minimale de confirmation
     """
@@ -509,7 +511,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
     logger.info(f"⏰ Démarrage: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"🪙 Token: {token}")
     logger.info(f"💰 Marge: ${margin}, Levier: {leverage}x")
-    logger.info(f"📊 Paramètres stratégie: entry_z={entry_z}, exit_z={exit_z}, stop_z={stop_z}, window={window}")
+    logger.info(f"📊 Paramètres stratégie: entry_z={entry_z}, exit_spread=${exit_spread}, stop_z={stop_z}, window={window}")
     logger.info("=" * 80)
     
     # 1. Récupérer l'historique depuis Supabase
