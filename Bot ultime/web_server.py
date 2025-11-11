@@ -602,18 +602,19 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             if all_lines:
                 # Filtrer pour garder UNIQUEMENT les événements critiques
                 # L'utilisateur veut juste savoir : bot lancé, entrée, sortie, PnL
-                critical_keywords = [
-                    '🤖 BOT D\'ARBITRAGE',  # Démarrage du bot
-                    '🎯 SIGNAL D\'ENTRÉE DÉTECTÉ',  # Signal d'entrée
-                    '✅ TRADES EXÉCUTÉS AVEC SUCCÈS',  # Entrée confirmée
-                    '📉 POSITION FERMÉE',  # Sortie avec PnL
-                    '❌ ÉCHEC DES TRADES',  # Erreur critique
-                    'PnL:',  # Ligne avec le PnL
-                    'Direction:',  # Direction du trade
-                    'Z-score',  # Z-score utilisé
-                    'Spread exploitable',  # Spread d'entrée/sortie
-                    'Raison:',  # Raison de sortie
-                ]
+            # Filtrer uniquement les événements CRITIQUES (très restreint)
+            critical_keywords = [
+                '🤖 BOT D\'ARBITRAGE STRATÉGIE',  # Démarrage du bot
+                '✅ TRADES EXÉCUTÉS AVEC SUCCÈS',  # Entrée en position confirmée
+                '📉 POSITION FERMÉE',  # Sortie de position
+                'Direction:',  # Direction du trade (contexte entrée/sortie)
+                'PnL:',  # PnL réalisé (contexte sortie)
+                'Raison:',  # Raison de sortie (contexte sortie)
+                'Z-score entrée:',  # Z-score d'entrée (contexte)
+                'Z-score sortie:',  # Z-score de sortie (contexte)
+                'Spread entrée:',  # Spread d'entrée (contexte)
+                'Spread sortie:',  # Spread de sortie (contexte)
+            ]
                 
                 filtered_logs = []
                 current_block = []
