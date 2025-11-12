@@ -16,10 +16,10 @@ logger = setup_logger("arbitrage_strategy")
 @dataclass
 class StrategyParams:
     """Paramètres de la stratégie"""
-    entry_z: float = 1.0  # Seuil d'entrée (z-score)
-    exit_spread_threshold: float = 10.0  # Seuil de sortie : convergence minimale du spread en $ (ex: sortie si spread converge d'au moins 10$)
+    entry_z: float = 1.0  # Seuil d'entrée (z-score) - Opportunité exceptionnelle
+    exit_spread_threshold: float = 6.0  # Seuil de sortie : convergence minimale du spread en $ (sortie rapide)
     stop_z: float = 4.0   # Stop loss (z-score)
-    min_spread: float = 5.0  # Spread minimum favorable pour entrer (en $)
+    min_spread: float = 12.0  # Spread minimum favorable pour entrer (en $) - Opportunités solides uniquement
     window: int = 60      # Fenêtre glissante (observations)
     min_duration_s: int = 4  # Durée minimale de confirmation (secondes)
     max_hold: int = 240   # Durée maximale de position (observations)
