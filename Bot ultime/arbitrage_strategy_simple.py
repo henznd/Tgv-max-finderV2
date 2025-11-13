@@ -26,9 +26,9 @@ class StrategyParamsSimple:
     """Paramètres de la stratégie simple"""
     entry_spread: float = 15.0  # Spread minimum pour entrer (en $)
     exit_spread: float = 5.0    # Spread maximum pour sortir (en $)
-    min_duration_s: int = 4     # Durée minimale de confirmation (secondes)
-    min_hold_time: int = 10     # Durée minimale de détention (secondes)
-    max_hold: int = 240         # Durée maximale de position (secondes)
+    min_duration_s: int = 4     # Durée minimale de confirmation du signal (en secondes)
+    min_hold_time: int = 10     # Durée minimale de détention de la position (en secondes) - ex: 10s = position ouverte au moins 10 secondes
+    max_hold: int = 240         # Durée maximale de position (en secondes) - ex: 240s = 4 minutes max
 
 
 @dataclass

@@ -61,7 +61,7 @@ async def check_trading_conditions(config: dict, token: str) -> tuple[bool, str]
     try:
         from paradex_py import Paradex
         sys.path.append(os.path.join(os.path.dirname(__file__), 'paradex'))
-        from paradex.paradex_trader_config import L2_PRIVATE_KEY, L1_ADDRESS, TOKEN_MARKET
+        from paradex_trader_config import L2_PRIVATE_KEY, L1_ADDRESS, TOKEN_MARKET
         
         paradex = Paradex(env='prod', l2_private_key=L2_PRIVATE_KEY)
         paradex.init_account(l1_address=L1_ADDRESS, l2_private_key=L2_PRIVATE_KEY)
