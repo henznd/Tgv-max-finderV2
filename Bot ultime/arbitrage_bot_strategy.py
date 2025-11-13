@@ -18,6 +18,7 @@ sys.path.insert(0, current_dir)
 
 # Imports du code existant
 from logger import setup_logger
+from simple_logger import setup_simple_logger
 from arbitrage_strategy import ArbitrageStrategy, StrategyParams
 from arbitrage_bot_config import (
     get_lighter_price_direct,
@@ -28,7 +29,8 @@ from arbitrage_bot_config import (
     PARADEX_MARKETS
 )
 
-logger = setup_logger("arbitrage_bot_strategy")
+logger = setup_logger("arbitrage_bot_strategy")  # Logger complet pour le fichier
+simple_logger = setup_simple_logger("arbitrage_bot_strategy")  # Logger simplifié pour la console
 
 # Configuration Supabase (depuis execute_sql_direct.py)
 SUPABASE_HOST = "db.jlqdkbdmjuqjqhesxvjg.supabase.co"
@@ -505,6 +507,10 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
         window: Taille de la fenêtre glissante
         min_duration_s: Durée minimale de confirmation
     """
+    # Log simple pour la console
+    simple_logger.bot_started(token, margin, leverage)
+    
+    # Log détaillé pour le fichier
     logger.info("=" * 80)
     logger.info("🤖 BOT D'ARBITRAGE - MODE STRATÉGIE AUTOMATIQUE")
     logger.info("=" * 80)
@@ -519,6 +525,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
     history_data = await get_price_history_from_supabase(token, limit=window)
     
     if len(history_data) < 2:
+        simple_logger.warning(f"Historique insuffisant ({len(history_data)} observations) - Attente de données...")
         logger.warning(f"⚠️ Historique insuffisant ({len(history_data)} observations)")
         logger.warning("⚠️ Le bot va attendre d'avoir assez de données...")
         # On continue quand même, la stratégie gérera le cas
@@ -753,6 +760,16 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                 
                                 # Log de fermeture
                                 closed_trade = position_before
+                                
+                                # Log simplifié pour la console
+                                z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
+                                exit_price = lighter_mid
+                                simple_logger.trade_closed(
+                                    closed_trade.direction, token, exit_price, z_score_exit_used,
+                                    closed_trade.pnl or 0, closed_trade.pnl_percent or 0
+                                )
+                                
+                                # Log détaillé pour le fichier
                                 logger.info("")
                                 logger.info("=" * 80)
                                 logger.info("📉 POSITION FERMÉE")
@@ -760,7 +777,6 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                 logger.info(f"   Direction: {closed_trade.direction}")
                                 logger.info(f"   Raison: {exit_reason}")
                                 z_score_entry_used = closed_trade.entry_z
-                                z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
                                 logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
                                 logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
                                 logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
@@ -772,10 +788,12 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                                 logger.info("=" * 80)
                                 logger.info("")
                             else:
+                                simple_logger.error("Échec de la fermeture des positions")
                                 logger.error("❌ Échec de la fermeture des positions")
                                 logger.warning("⚠️ Le bot continuera de surveiller la position")
                                 # NE PAS fermer la position virtuelle si la fermeture réelle a échoué
                         except Exception as e:
+                            simple_logger.error(f"Erreur lors de la fermeture des positions: {e}")
                             logger.error(f"❌ Erreur lors de la fermeture des positions: {e}")
                             import traceback
                             logger.error(f"🔍 Traceback: {traceback.format_exc()}")
@@ -790,6 +808,16 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         
                         # Log de fermeture
                         closed_trade = position_before
+                        
+                        # Log simplifié pour la console
+                        z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
+                        exit_price = lighter_mid
+                        simple_logger.trade_closed(
+                            closed_trade.direction, token, exit_price, z_score_exit_used,
+                            closed_trade.pnl or 0, closed_trade.pnl_percent or 0
+                        )
+                        
+                        # Log détaillé pour le fichier
                         logger.info("")
                         logger.info("=" * 80)
                         logger.info("📉 POSITION FERMÉE")
@@ -797,7 +825,6 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info(f"   Direction: {closed_trade.direction}")
                         logger.info(f"   Raison: {exit_reason}")
                         z_score_entry_used = closed_trade.entry_z
-                        z_score_exit_used = z_score_short if closed_trade.direction == 'short_spread' else z_score_long
                         logger.info(f"   Z-score entrée: {z_score_entry_used:.2f}")
                         logger.info(f"   Z-score sortie: {z_score_exit_used:.2f} (short={z_score_short:.2f}, long={z_score_long:.2f})")
                         logger.info(f"   Spread entrée: {closed_trade.entry_spread:.2f}")
@@ -832,6 +859,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                 
                 if should_enter:
                     # Signal d'entrée confirmé → Créer position virtuelle et exécuter trade
+                    # Log détaillé pour le fichier
                     logger.info("")
                     logger.info("=" * 80)
                     logger.info("🎯 SIGNAL D'ENTRÉE DÉTECTÉ")
@@ -1063,6 +1091,13 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info("✅ TRADES EXÉCUTÉS AVEC SUCCÈS!")
                         logger.info("=" * 80)
                         logger.info("")
+                        
+                        # Log simplifié pour la console
+                        z_score_entry = z_score_short if enter_direction == 'short_spread' else z_score_long
+                        entry_price = lighter_mid  # Prix moyen à l'entrée
+                        amount = trade_config['lighter']['amount']
+                        simple_logger.trade_opened(enter_direction, token, amount, entry_price, z_score_entry)
+                        
                         # Créer la position virtuelle dans la stratégie pour suivre la sortie
                         strategy.enter_position(z_score_short, z_score_long, enter_direction, current_time, spread_PL, spread_LP)
                         if strategy.current_position:
@@ -1071,6 +1106,7 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
                         logger.info("📌 Position réelle créée - La stratégie va maintenant gérer sa sortie")
                         logger.info("")
                     else:
+                        simple_logger.error("Échec de l'exécution des trades")
                         logger.error("=" * 80)
                         logger.error("❌ ÉCHEC DES TRADES")
                         logger.error("=" * 80)
@@ -1080,10 +1116,10 @@ async def run_strategy_loop(token: str = "BTC", margin: float = 20, leverage: in
             # ============================================
             # ÉTAPE 6: Logs périodiques
             # ============================================
-            # Log les Z-scores à chaque tick pour mise à jour en temps réel sur la page web
-            logger.info(f"⏱️  Tick {tick_count} | Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f} | Spreads: PL={spread_PL:.2f}, LP={spread_LP:.2f}")
+            # Log détaillé dans le fichier seulement
+            logger.debug(f"⏱️  Tick {tick_count} | Z-scores: short={z_score_short:.2f}, long={z_score_long:.2f} | Spreads: PL={spread_PL:.2f}, LP={spread_LP:.2f}")
             
-            # Log périodique détaillé (toutes les 60 secondes)
+            # Log périodique détaillé (toutes les 60 secondes) - seulement dans le fichier
             if tick_count % 60 == 0:
                 position_info = "Non"
                 if strategy.current_position and strategy.current_position.status == 'open':

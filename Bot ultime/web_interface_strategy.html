@@ -415,6 +415,20 @@
             <!-- LEFT: CONFIGURATION -->
             <div class="card">
                 <h2>⚙️ Configuration</h2>
+                
+                <!-- SÉLECTION DE STRATÉGIE -->
+                <div class="form-group" style="margin-bottom: 24px; grid-column: 1 / -1;">
+                    <label style="font-size: 1.1em;">🎯 Stratégie</label>
+                    <select id="strategy" onchange="onStrategyChange()" style="font-size: 1.1em; padding: 12px;">
+                        <option value="zscore">📊 Z-Score (Avancée)</option>
+                        <option value="simple">⚡ Spread Simple</option>
+                    </select>
+                    <small style="margin-top: 8px; display: block;">
+                        <span id="strategy-desc-zscore">Utilise le Z-score pour détecter les opportunités statistiquement anormales</span>
+                        <span id="strategy-desc-simple" style="display: none;">Arbitrage pur basé sur un seuil de spread fixe (plus simple)</span>
+                    </small>
+                </div>
+                
                 <div class="form-grid">
                     <div class="form-group">
                         <label>🪙 Token</label>
@@ -432,20 +446,39 @@
                         <label>📊 Levier (x)</label>
                         <input type="number" id="leverage" value="50" min="1" max="100">
                     </div>
-                    <div class="form-group">
+                    
+                    <!-- STRATÉGIE Z-SCORE -->
+                    <div class="form-group zscore-only">
                         <label>📈 Z-score entrée</label>
                         <input type="number" id="entry-z" value="1.0" step="0.1" min="0">
                         <small>Seuil minimum d'entrée</small>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group zscore-only">
                         <label>💸 Convergence sortie ($)</label>
-                        <input type="number" id="exit-spread" value="10" step="1" min="0">
+                        <input type="number" id="exit-spread" value="6" step="1" min="0">
                         <small>Convergence minimale pour sortir</small>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group zscore-only">
                         <label>🛑 Stop Z-score</label>
                         <input type="number" id="stop-z" value="4.0" step="0.1" min="0">
                         <small>Stop loss en Z-score</small>
+                    </div>
+                    
+                    <!-- STRATÉGIE SIMPLE -->
+                    <div class="form-group simple-only" style="display: none;">
+                        <label>📈 Spread entrée ($)</label>
+                        <input type="number" id="entry-spread" value="15" step="0.5" min="0">
+                        <small>Spread minimum pour entrer</small>
+                    </div>
+                    <div class="form-group simple-only" style="display: none;">
+                        <label>💸 Spread sortie ($)</label>
+                        <input type="number" id="exit-spread-simple" value="5" step="0.5" min="0">
+                        <small>Spread maximum pour sortir</small>
+                    </div>
+                    <div class="form-group simple-only" style="display: none;">
+                        <label>⏱️ Hold time min (s)</label>
+                        <input type="number" id="min-hold-time" value="10" step="1" min="0">
+                        <small>Durée minimale de détention</small>
                     </div>
                 </div>
 
@@ -536,24 +569,69 @@
         }
 
         // BOT CONTROL
+        // Fonction pour changer de stratégie
+        function onStrategyChange() {
+            const strategy = document.getElementById('strategy').value;
+            const zscoreElements = document.querySelectorAll('.zscore-only');
+            const simpleElements = document.querySelectorAll('.simple-only');
+            const zscoreDesc = document.getElementById('strategy-desc-zscore');
+            const simpleDesc = document.getElementById('strategy-desc-simple');
+            
+            if (strategy === 'zscore') {
+                // Afficher paramètres Z-score
+                zscoreElements.forEach(el => el.style.display = 'flex');
+                simpleElements.forEach(el => el.style.display = 'none');
+                zscoreDesc.style.display = 'block';
+                simpleDesc.style.display = 'none';
+            } else {
+                // Afficher paramètres Simple
+                zscoreElements.forEach(el => el.style.display = 'none');
+                simpleElements.forEach(el => el.style.display = 'flex');
+                zscoreDesc.style.display = 'none';
+                simpleDesc.style.display = 'block';
+            }
+        }
+
         async function launchBot() {
-            const params = {
+            const strategy = document.getElementById('strategy').value;
+            const baseParams = {
                 token: document.getElementById('token').value,
                 margin: parseFloat(document.getElementById('margin').value),
                 leverage: parseInt(document.getElementById('leverage').value),
-                entry_z: parseFloat(document.getElementById('entry-z').value),
-                exit_spread: parseFloat(document.getElementById('exit-spread').value),
-                stop_z: parseFloat(document.getElementById('stop-z').value)
+                strategy: strategy
             };
+            
+            let params;
+            let endpoint;
+            
+            if (strategy === 'zscore') {
+                // Paramètres Z-score
+                params = {
+                    ...baseParams,
+                    entry_z: parseFloat(document.getElementById('entry-z').value),
+                    exit_spread: parseFloat(document.getElementById('exit-spread').value),
+                    stop_z: parseFloat(document.getElementById('stop-z').value)
+                };
+                endpoint = '/api/strategy/launch';
+            } else {
+                // Paramètres Simple
+                params = {
+                    ...baseParams,
+                    entry_spread: parseFloat(document.getElementById('entry-spread').value),
+                    exit_spread: parseFloat(document.getElementById('exit-spread-simple').value),
+                    min_hold_time: parseInt(document.getElementById('min-hold-time').value)
+                };
+                endpoint = '/api/strategy/simple/launch';
+            }
 
             try {
-                const response = await fetch('/api/strategy/launch', {
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(params)
                 });
                 const data = await response.json();
-                showAlert(data.success ? '✅ Bot lancé !' : '❌ ' + data.error, data.success ? 'success' : 'error');
+                showAlert(data.success ? `✅ Bot ${strategy === 'zscore' ? 'Z-Score' : 'Simple'} lancé !` : '❌ ' + data.error, data.success ? 'success' : 'error');
             } catch (error) {
                 showAlert('❌ Erreur de connexion', 'error');
             }

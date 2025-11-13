@@ -33,6 +33,12 @@ last_log_position = {}  # Pour suivre la position dans les fichiers de logs
 strategy_bot_running = False
 strategy_bot_process = None
 strategy_bot_thread = None
+
+# État du bot simple (pour start/stop)
+simple_bot_running = False
+simple_bot_process = None
+simple_bot_thread = None
+
 session_reset_timestamp = None  # Timestamp du dernier reset de session
 strategy_last_log_position = {}  # Pour suivre la position dans les fichiers de logs
 
@@ -94,6 +100,11 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 self.stop_strategy_bot()
             elif parsed_path.path == '/api/strategy/reset':
                 self.reset_strategy_session()
+            # Routes stratégie simple
+            elif parsed_path.path == '/api/strategy/simple/launch':
+                self.launch_simple_bot()
+            elif parsed_path.path == '/api/strategy/simple/stop':
+                self.stop_simple_bot()
             # Anciennes routes stratégie (rétrocompatibilité)
             elif parsed_path.path == '/api/launch-strategy':
                 self.launch_strategy_bot()
@@ -441,6 +452,74 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 "success": False,
                 "error": str(e)
             }, status=500)
+    
+    def launch_simple_bot(self):
+        """Lance le bot simple"""
+        global simple_bot_running, simple_bot_thread
+        
+        if simple_bot_running:
+            self.send_json_response({"error": "Le bot simple est déjà en cours d'exécution"}, status=400)
+            return
+        
+        try:
+            # Lire les paramètres depuis le body
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            params = json.loads(body.decode('utf-8'))
+            
+            simple_bot_running = True
+            
+            # Lancer le bot dans un thread séparé
+            simple_bot_thread = threading.Thread(
+                target=run_simple_bot_async,
+                args=(params,),
+                daemon=True
+            )
+            simple_bot_thread.start()
+            
+            logger.info(f"Bot simple lancé avec paramètres: {params}")
+            self.send_json_response({"success": True, "message": "Bot simple lancé avec succès"})
+        except Exception as e:
+            simple_bot_running = False
+            logger.error(f"Erreur lors du lancement du bot simple: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.send_json_response({"error": str(e)}, status=500)
+    
+    def stop_simple_bot(self):
+        """Arrête le bot simple"""
+        global simple_bot_running, simple_bot_process
+        
+        if not simple_bot_running:
+            self.send_json_response({"error": "Le bot simple n'est pas en cours d'exécution"}, status=400)
+            return
+        
+        try:
+            simple_bot_running = False
+            
+            # Arrêter le processus si il existe
+            if simple_bot_process:
+                try:
+                    simple_bot_process.terminate()
+                    simple_bot_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    simple_bot_process.kill()
+                except Exception as e:
+                    logger.warning(f"Erreur lors de l'arrêt du processus: {e}")
+                simple_bot_process = None
+            
+            # Aussi tuer le processus via pkill au cas où
+            try:
+                subprocess.run(['pkill', '-f', 'arbitrage_bot_simple.py'], 
+                             capture_output=True, timeout=5)
+            except:
+                pass
+            
+            logger.info("Arrêt du bot simple demandé")
+            self.send_json_response({"success": True, "message": "Arrêt du bot simple demandé"})
+        except Exception as e:
+            logger.error(f"Erreur lors de l'arrêt du bot simple: {e}")
+            self.send_json_response({"error": str(e)}, status=500)
     
     def get_strategy_logs(self):
         """Récupère les logs filtrés du bot stratégie (événements importants uniquement)"""
@@ -925,6 +1004,57 @@ def run_strategy_bot_async(params):
     finally:
         strategy_bot_running = False
         strategy_bot_process = None
+
+def run_simple_bot_async(params):
+    """Fonction pour exécuter le bot simple de manière asynchrone"""
+    global simple_bot_running, simple_bot_process
+    
+    try:
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot_simple")
+        
+        # Construire la commande
+        cmd = [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), 'arbitrage_bot_simple.py'),
+            '--token', params['token'],
+            '--margin', str(params['margin']),
+            '--leverage', str(params['leverage']),
+            '--entry-spread', str(params['entry_spread']),
+            '--exit-spread', str(params['exit_spread']),
+            '--min-hold-time', str(params['min_hold_time'])
+        ]
+        
+        bot_logger.info(f"🚀 Lancement du bot simple avec: {params}")
+        
+        # Lancer le processus
+        simple_bot_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Lire la sortie en temps réel
+        for line in simple_bot_process.stdout:
+            if not simple_bot_running:
+                break
+            if line.strip():
+                bot_logger.info(line.strip())
+        
+        simple_bot_process.wait()
+        
+    except Exception as e:
+        from logger import setup_logger
+        bot_logger = setup_logger("arbitrage_bot_simple")
+        bot_logger.error(f"Erreur lors de l'exécution du bot simple: {e}")
+        import traceback
+        bot_logger.error(traceback.format_exc())
+    finally:
+        simple_bot_running = False
+        simple_bot_process = None
 
 def start_server(port=8080):
     """Démarre le serveur web"""

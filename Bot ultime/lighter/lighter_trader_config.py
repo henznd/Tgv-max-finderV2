@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import du système de logs
 from logger import setup_logger
+from simple_logger import setup_simple_logger
 
 # ========= CONFIGURATION =========
 BASE_URL = "https://mainnet.zklighter.elliot.ai"
@@ -46,6 +47,7 @@ def load_config():
 async def execute_trade(config_data):
     """Exécute un trade sur Lighter selon la configuration"""
     logger = setup_logger("lighter_trader")
+    simple_logger = setup_simple_logger("lighter_trader")
     
     lighter_config = config_data.get('lighter', {})
     if not lighter_config:
@@ -95,6 +97,7 @@ async def execute_trade(config_data):
     # Déterminer is_ask (True = vente/short, False = achat/long)
     is_ask = (order_type.lower() == 'sell')
     
+    # Log détaillé pour le fichier
     logger.info("=" * 60)
     logger.info("🚀 LIGHTER TRADER - EXECUTION DU TRADE")
     logger.info("=" * 60)
@@ -294,6 +297,7 @@ async def execute_trade(config_data):
 async def main():
     """Fonction principale"""
     logger = setup_logger("lighter_trader")
+    simple_logger = setup_simple_logger("lighter_trader")
     
     try:
         # Charger la configuration
