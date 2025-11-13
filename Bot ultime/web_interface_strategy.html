@@ -420,12 +420,12 @@
                 <div class="form-group" style="margin-bottom: 24px; grid-column: 1 / -1;">
                     <label style="font-size: 1.1em;">🎯 Stratégie</label>
                     <select id="strategy" onchange="onStrategyChange()" style="font-size: 1.1em; padding: 12px;">
+                        <option value="simple" selected>⚡ Spread Simple (Recommandé)</option>
                         <option value="zscore">📊 Z-Score (Avancée)</option>
-                        <option value="simple">⚡ Spread Simple</option>
                     </select>
                     <small style="margin-top: 8px; display: block;">
-                        <span id="strategy-desc-zscore">Utilise le Z-score pour détecter les opportunités statistiquement anormales</span>
-                        <span id="strategy-desc-simple" style="display: none;">Arbitrage pur basé sur un seuil de spread fixe (plus simple)</span>
+                        <span id="strategy-desc-simple">Arbitrage pur basé sur un seuil de spread fixe (plus simple et réactif)</span>
+                        <span id="strategy-desc-zscore" style="display: none;">Utilise le Z-score pour détecter les opportunités statistiquement anormales</span>
                     </small>
                 </div>
                 
@@ -447,38 +447,38 @@
                         <input type="number" id="leverage" value="50" min="1" max="100">
                     </div>
                     
-                    <!-- STRATÉGIE Z-SCORE -->
-                    <div class="form-group zscore-only">
-                        <label>📈 Z-score entrée</label>
-                        <input type="number" id="entry-z" value="1.0" step="0.1" min="0">
-                        <small>Seuil minimum d'entrée</small>
-                    </div>
-                    <div class="form-group zscore-only">
-                        <label>💸 Convergence sortie ($)</label>
-                        <input type="number" id="exit-spread" value="6" step="1" min="0">
-                        <small>Convergence minimale pour sortir</small>
-                    </div>
-                    <div class="form-group zscore-only">
-                        <label>🛑 Stop Z-score</label>
-                        <input type="number" id="stop-z" value="4.0" step="0.1" min="0">
-                        <small>Stop loss en Z-score</small>
-                    </div>
-                    
-                    <!-- STRATÉGIE SIMPLE -->
-                    <div class="form-group simple-only" style="display: none;">
+                    <!-- STRATÉGIE SIMPLE (PAR DÉFAUT) -->
+                    <div class="form-group simple-only">
                         <label>📈 Spread entrée ($)</label>
                         <input type="number" id="entry-spread" value="15" step="0.5" min="0">
                         <small>Spread minimum pour entrer</small>
                     </div>
-                    <div class="form-group simple-only" style="display: none;">
+                    <div class="form-group simple-only">
                         <label>💸 Spread sortie ($)</label>
                         <input type="number" id="exit-spread-simple" value="5" step="0.5" min="0">
                         <small>Spread maximum pour sortir</small>
                     </div>
-                    <div class="form-group simple-only" style="display: none;">
+                    <div class="form-group simple-only">
                         <label>⏱️ Hold time min (secondes)</label>
                         <input type="number" id="min-hold-time" value="10" step="1" min="0">
                         <small>Position ouverte au moins X secondes</small>
+                    </div>
+                    
+                    <!-- STRATÉGIE Z-SCORE (AVANCÉE) -->
+                    <div class="form-group zscore-only" style="display: none;">
+                        <label>📈 Z-score entrée</label>
+                        <input type="number" id="entry-z" value="1.0" step="0.1" min="0">
+                        <small>Seuil minimum d'entrée</small>
+                    </div>
+                    <div class="form-group zscore-only" style="display: none;">
+                        <label>💸 Convergence sortie ($)</label>
+                        <input type="number" id="exit-spread" value="6" step="1" min="0">
+                        <small>Convergence minimale pour sortir</small>
+                    </div>
+                    <div class="form-group zscore-only" style="display: none;">
+                        <label>🛑 Stop Z-score</label>
+                        <input type="number" id="stop-z" value="4.0" step="0.1" min="0">
+                        <small>Stop loss en Z-score</small>
                     </div>
                 </div>
 
