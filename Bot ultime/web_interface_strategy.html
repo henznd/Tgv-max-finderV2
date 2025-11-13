@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🤖 ArbiBot Pro - Stratégie Automatique</title>
+    <title>🤖 ArbiBot - Stratégie Simple</title>
     <style>
         * {
             margin: 0;
@@ -68,6 +68,7 @@
         .status-running {
             background: var(--success);
             color: white;
+            animation: pulse 2s infinite;
         }
 
         .status-stopped {
@@ -75,7 +76,46 @@
             color: var(--text-muted);
         }
 
-        /* GRID LAYOUT */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* ACTIVE CONFIG */
+        #active-config {
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--dark-3);
+            border-radius: 12px;
+            display: none;
+        }
+
+        #active-config h3 {
+            font-size: 0.9em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            font-size: 0.95em;
+        }
+
+        .config-item {
+            color: var(--text-muted);
+        }
+
+        .config-value {
+            font-weight: 600;
+            margin-left: 8px;
+            color: var(--text);
+        }
+
+        /* MAIN GRID */
         .main-grid {
             display: grid;
             grid-template-columns: 1fr 2fr;
@@ -99,10 +139,10 @@
             gap: 10px;
         }
 
-        /* CONFIGURATION FORM */
+        /* FORM */
         .form-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
         }
 
@@ -115,28 +155,30 @@
         .form-group label {
             font-weight: 600;
             font-size: 0.9em;
-            color: var(--text);
+            color: var(--text-muted);
         }
 
-        .form-group input, .form-group select {
-            background: var(--dark);
-            border: 2px solid var(--border);
+        .form-group input,
+        .form-group select {
+            background: var(--dark-3);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 10px 14px;
+            padding: 10px 12px;
             color: var(--text);
             font-size: 1em;
-            font-weight: 600;
-            outline: none;
-            transition: border-color 0.3s;
+            transition: all 0.2s;
         }
 
-        .form-group input:focus, .form-group select:focus {
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
             border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
 
         .form-group small {
-            color: var(--text-muted);
             font-size: 0.85em;
+            color: var(--text-muted);
         }
 
         /* BUTTONS */
@@ -149,25 +191,30 @@
         .btn {
             padding: 12px 24px;
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             font-size: 1em;
-            font-weight: 700;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            display: inline-flex;
+            transition: all 0.2s;
+            display: flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
-            flex: 1;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            background: linear-gradient(135deg, var(--primary), #4f46e5);
             color: white;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
         }
 
         .btn-danger {
@@ -175,51 +222,63 @@
             color: white;
         }
 
-        .btn-danger:hover {
+        .btn-danger:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
         }
 
         .btn-secondary {
             background: var(--dark-3);
             color: var(--text);
-            border: 2px solid var(--border);
         }
 
-        .btn-secondary:hover {
-            border-color: var(--primary);
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--border);
+        }
+
+        /* SPINNER */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
         /* STATS */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 16px;
         }
 
         .stat-card {
-            background: var(--dark);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            background: linear-gradient(135deg, var(--dark-3), var(--dark-2));
             padding: 16px;
+            border-radius: 12px;
             text-align: center;
+            border: 1px solid var(--border);
         }
 
         .stat-card h3 {
-            font-size: 0.85em;
+            font-size: 0.9em;
             color: var(--text-muted);
             margin-bottom: 8px;
-            font-weight: 600;
         }
 
         .stat-value {
             font-size: 2em;
-            font-weight: 800;
+            font-weight: 700;
             color: var(--text);
         }
 
         .stat-card.z-score {
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
 
         .stat-card.z-score h3 {
@@ -228,162 +287,127 @@
 
         .stat-card.z-score .stat-value {
             color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
-        /* LOGS SYSTEM */
+        /* POSITIONS */
+        .positions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .position-card {
+            background: var(--dark-3);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .position-card h3 {
+            font-size: 1.1em;
+            margin-bottom: 12px;
+        }
+
+        .position-content {
+            font-size: 0.9em;
+            line-height: 1.8;
+        }
+
+        /* LOGS */
         .logs-section {
             grid-column: 1 / -1;
         }
 
         .tabs {
             display: flex;
-            gap: 4px;
+            gap: 8px;
             margin-bottom: 16px;
             border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
         }
 
         .tab {
-            padding: 12px 24px;
-            background: transparent;
+            padding: 8px 16px;
+            background: none;
             border: none;
             color: var(--text-muted);
-            font-weight: 700;
+            font-size: 0.95em;
+            font-weight: 600;
             cursor: pointer;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s;
-            font-size: 1em;
-        }
-
-        .tab:hover {
-            color: var(--text);
-            background: rgba(99, 102, 241, 0.1);
-        }
-
-        .tab.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-
-        .logs-container {
-            background: var(--dark);
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            height: 600px;
-            overflow-y: auto;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 0.9em;
-            line-height: 1.6;
-        }
-
-        .logs-container::-webkit-scrollbar {
-            width: 10px;
-        }
-
-        .logs-container::-webkit-scrollbar-track {
-            background: var(--dark-2);
-            border-radius: 10px;
-        }
-
-        .logs-container::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 10px;
-        }
-
-        /* LOG TYPES */
-        .log-entry {
-            margin-bottom: 8px;
-            padding: 8px 12px;
             border-radius: 6px;
-            border-left: 4px solid transparent;
             transition: all 0.2s;
         }
 
-        .log-entry:hover {
-            background: rgba(99, 102, 241, 0.1);
+        .tab.active {
+            background: var(--primary);
+            color: white;
         }
 
-        /* CRITICAL LOGS (Highlighted) */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .logs-container {
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            height: 500px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
         .log-bot-start {
-            background: rgba(16, 185, 129, 0.15);
-            border-left-color: var(--success);
-            font-weight: 700;
-            font-size: 1.05em;
-        }
-
-        .log-trade-open {
-            background: rgba(99, 102, 241, 0.15);
-            border-left-color: var(--primary);
-            font-weight: 700;
-        }
-
-        .log-trade-close {
-            background: rgba(239, 68, 68, 0.15);
-            border-left-color: var(--danger);
-            font-weight: 700;
-        }
-
-        .log-pnl-positive {
-            background: rgba(16, 185, 129, 0.2);
-            border-left-color: var(--success);
-            color: #10b981;
-            font-weight: 700;
-        }
-
-        .log-pnl-negative {
-            background: rgba(239, 68, 68, 0.2);
-            border-left-color: var(--danger);
-            color: #ef4444;
-            font-weight: 700;
-        }
-
-        .log-error {
-            background: rgba(239, 68, 68, 0.15);
-            border-left-color: var(--danger);
-            color: #fca5a5;
-        }
-
-        .log-warning {
-            background: rgba(245, 158, 11, 0.15);
-            border-left-color: var(--warning);
-            color: #fbbf24;
-        }
-
-        .log-info {
-            color: var(--text-muted);
-        }
-
-        /* EMPTY STATE */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-muted);
-        }
-
-        .empty-icon {
-            font-size: 4em;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
-        .empty-text {
-            font-size: 1.2em;
+            color: #60a5fa;
             font-weight: 600;
         }
 
-        /* ALERTS */
+        .log-trade-open {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .log-trade-close {
+            color: #f59e0b;
+            font-weight: 600;
+        }
+
+        .log-error {
+            color: #ef4444;
+        }
+
+        .log-warning {
+            color: #f59e0b;
+        }
+
+        .log-info {
+            color: #94a3b8;
+        }
+
+        /* ALERT */
         .alert {
             position: fixed;
             top: 20px;
             right: 20px;
             padding: 16px 24px;
-            border-radius: 12px;
+            border-radius: 8px;
             color: white;
-            font-weight: 700;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             z-index: 1000;
-            animation: slideIn 0.3s ease;
+            animation: slideIn 0.3s ease-out;
         }
 
         @keyframes slideIn {
@@ -400,14 +424,33 @@
         .alert-success { background: var(--success); }
         .alert-error { background: var(--danger); }
         .alert-warning { background: var(--warning); }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- HEADER -->
         <div class="header">
-            <h1>🤖 ArbiBot Pro - Stratégie Automatique</h1>
+            <h1>🤖 ArbiBot - Stratégie Simple</h1>
             <div id="status-badge" class="status-badge status-stopped">⏸️ Bot arrêté</div>
+            
+            <!-- CONFIGURATION ACTIVE -->
+            <div id="active-config">
+                <h3>📋 Configuration Active</h3>
+                <div class="config-grid">
+                    <div class="config-item">Token: <span id="config-token" class="config-value">-</span></div>
+                    <div class="config-item">Marge: <span id="config-margin" class="config-value">-</span></div>
+                    <div class="config-item">Levier: <span id="config-leverage" class="config-value">-</span></div>
+                    <div class="config-item">Spread Entrée: <span id="config-entry" class="config-value">-</span></div>
+                    <div class="config-item">Spread Sortie: <span id="config-exit" class="config-value">-</span></div>
+                    <div class="config-item">Hold Min: <span id="config-hold" class="config-value">-</span></div>
+                </div>
+            </div>
         </div>
 
         <!-- MAIN GRID -->
@@ -415,19 +458,6 @@
             <!-- LEFT: CONFIGURATION -->
             <div class="card">
                 <h2>⚙️ Configuration</h2>
-                
-                <!-- SÉLECTION DE STRATÉGIE -->
-                <div class="form-group" style="margin-bottom: 24px; grid-column: 1 / -1;">
-                    <label style="font-size: 1.1em;">🎯 Stratégie</label>
-                    <select id="strategy" onchange="onStrategyChange()" style="font-size: 1.1em; padding: 12px;">
-                        <option value="simple" selected>⚡ Spread Simple (Recommandé)</option>
-                        <option value="zscore">📊 Z-Score (Avancée)</option>
-                    </select>
-                    <small style="margin-top: 8px; display: block;">
-                        <span id="strategy-desc-simple">Arbitrage pur basé sur un seuil de spread fixe (plus simple et réactif)</span>
-                        <span id="strategy-desc-zscore" style="display: none;">Utilise le Z-score pour détecter les opportunités statistiquement anormales</span>
-                    </small>
-                </div>
                 
                 <div class="form-grid">
                     <div class="form-group">
@@ -446,45 +476,26 @@
                         <label>📊 Levier (x)</label>
                         <input type="number" id="leverage" value="50" min="1" max="100">
                     </div>
-                    
-                    <!-- STRATÉGIE SIMPLE (PAR DÉFAUT) -->
-                    <div class="form-group simple-only">
+                    <div class="form-group">
                         <label>📈 Spread entrée ($)</label>
-                        <input type="number" id="entry-spread" value="15" step="0.5" min="0">
+                        <input type="number" id="entry-spread" value="40" step="0.5" min="0">
                         <small>Spread minimum pour entrer</small>
                     </div>
-                    <div class="form-group simple-only">
+                    <div class="form-group">
                         <label>💸 Spread sortie ($)</label>
-                        <input type="number" id="exit-spread-simple" value="5" step="0.5" min="0">
+                        <input type="number" id="exit-spread" value="15" step="0.5" min="0">
                         <small>Spread maximum pour sortir</small>
                     </div>
-                    <div class="form-group simple-only">
-                        <label>⏱️ Hold time min (secondes)</label>
+                    <div class="form-group">
+                        <label>⏱️ Hold time min (s)</label>
                         <input type="number" id="min-hold-time" value="10" step="1" min="0">
                         <small>Position ouverte au moins X secondes</small>
-                    </div>
-                    
-                    <!-- STRATÉGIE Z-SCORE (AVANCÉE) -->
-                    <div class="form-group zscore-only" style="display: none;">
-                        <label>📈 Z-score entrée</label>
-                        <input type="number" id="entry-z" value="1.0" step="0.1" min="0">
-                        <small>Seuil minimum d'entrée</small>
-                    </div>
-                    <div class="form-group zscore-only" style="display: none;">
-                        <label>💸 Convergence sortie ($)</label>
-                        <input type="number" id="exit-spread" value="6" step="1" min="0">
-                        <small>Convergence minimale pour sortir</small>
-                    </div>
-                    <div class="form-group zscore-only" style="display: none;">
-                        <label>🛑 Stop Z-score</label>
-                        <input type="number" id="stop-z" value="4.0" step="0.1" min="0">
-                        <small>Stop loss en Z-score</small>
                     </div>
                 </div>
 
                 <div class="btn-group">
-                    <button class="btn btn-primary" onclick="launchBot()">🚀 Lancer</button>
-                    <button class="btn btn-danger" onclick="stopBot()">⏹️ Arrêter</button>
+                    <button id="btn-launch" class="btn btn-primary" onclick="launchBot()">🚀 Lancer le bot</button>
+                    <button id="btn-stop" class="btn btn-danger" onclick="stopBot()">⏹️ Arrêter</button>
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-secondary" onclick="resetSession()">🔄 Reset Session</button>
@@ -516,6 +527,22 @@
                         <div class="stat-value" id="stat-zscore">-</div>
                     </div>
                 </div>
+                
+                <!-- POSITIONS EN COURS -->
+                <div class="positions-grid">
+                    <div class="position-card">
+                        <h3 style="color: var(--warning);">⚡ Lighter</h3>
+                        <div id="lighter-positions" class="position-content">
+                            <div style="color: var(--text-muted);">Aucune position</div>
+                        </div>
+                    </div>
+                    <div class="position-card">
+                        <h3 style="color: var(--success);">🎯 Paradex</h3>
+                        <div id="paradex-positions" class="position-content">
+                            <div style="color: var(--text-muted);">Aucune position</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -526,129 +553,96 @@
                 <button class="tab active" onclick="switchTab('critical')">⚡ Événements critiques</button>
                 <button class="tab" onclick="switchTab('all')">📋 Tous les logs</button>
             </div>
-            <div id="logs-critical" class="logs-container">
-                <div class="empty-state">
-                    <div class="empty-icon">📭</div>
-                    <div class="empty-text">En attente d'événements critiques...</div>
-                    <small>Lancez le bot pour voir les trades</small>
+            <div id="tab-critical" class="tab-content active">
+                <div id="logs-critical" class="logs-container">
+                    <div class="empty-state">Aucun événement pour le moment</div>
                 </div>
             </div>
-            <div id="logs-all" class="logs-container" style="display: none;">
-                <div class="empty-state">
-                    <div class="empty-icon">📋</div>
-                    <div class="empty-text">Aucun log disponible</div>
+            <div id="tab-all" class="tab-content">
+                <div id="logs-all" class="logs-container">
+                    <div class="empty-state">Aucun log pour le moment</div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentTab = 'critical';
         let logsPolling = null;
         let displayedCriticalLogs = new Set();
         let displayedAllLogs = new Set();
 
-        // INITIALIZATION
-        document.addEventListener('DOMContentLoaded', () => {
-            checkStatus();
-            startLogsPolling();
-            setInterval(checkStatus, 3000);
-        });
-
-        // TAB SWITCHING
-        function switchTab(tab) {
-            currentTab = tab;
-            
-            // Update tab buttons
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            
-            // Show/hide containers
-            document.getElementById('logs-critical').style.display = tab === 'critical' ? 'block' : 'none';
-            document.getElementById('logs-all').style.display = tab === 'all' ? 'block' : 'none';
-        }
-
-        // BOT CONTROL
-        // Fonction pour changer de stratégie
-        function onStrategyChange() {
-            const strategy = document.getElementById('strategy').value;
-            const zscoreElements = document.querySelectorAll('.zscore-only');
-            const simpleElements = document.querySelectorAll('.simple-only');
-            const zscoreDesc = document.getElementById('strategy-desc-zscore');
-            const simpleDesc = document.getElementById('strategy-desc-simple');
-            
-            if (strategy === 'zscore') {
-                // Afficher paramètres Z-score
-                zscoreElements.forEach(el => el.style.display = 'flex');
-                simpleElements.forEach(el => el.style.display = 'none');
-                zscoreDesc.style.display = 'block';
-                simpleDesc.style.display = 'none';
-            } else {
-                // Afficher paramètres Simple
-                zscoreElements.forEach(el => el.style.display = 'none');
-                simpleElements.forEach(el => el.style.display = 'flex');
-                zscoreDesc.style.display = 'none';
-                simpleDesc.style.display = 'block';
-            }
-        }
-
+        // LAUNCH BOT
         async function launchBot() {
-            const strategy = document.getElementById('strategy').value;
-            const baseParams = {
+            const btn = document.getElementById('btn-launch');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Lancement...';
+            
+            const params = {
                 token: document.getElementById('token').value,
                 margin: parseFloat(document.getElementById('margin').value),
                 leverage: parseInt(document.getElementById('leverage').value),
-                strategy: strategy
+                entry_spread: parseFloat(document.getElementById('entry-spread').value),
+                exit_spread: parseFloat(document.getElementById('exit-spread').value),
+                min_hold_time: parseInt(document.getElementById('min-hold-time').value)
             };
-            
-            let params;
-            let endpoint;
-            
-            if (strategy === 'zscore') {
-                // Paramètres Z-score
-                params = {
-                    ...baseParams,
-                    entry_z: parseFloat(document.getElementById('entry-z').value),
-                    exit_spread: parseFloat(document.getElementById('exit-spread').value),
-                    stop_z: parseFloat(document.getElementById('stop-z').value)
-                };
-                endpoint = '/api/strategy/launch';
-            } else {
-                // Paramètres Simple
-                params = {
-                    ...baseParams,
-                    entry_spread: parseFloat(document.getElementById('entry-spread').value),
-                    exit_spread: parseFloat(document.getElementById('exit-spread-simple').value),
-                    min_hold_time: parseInt(document.getElementById('min-hold-time').value)
-                };
-                endpoint = '/api/strategy/simple/launch';
-            }
 
             try {
-                const response = await fetch(endpoint, {
+                const response = await fetch('/api/strategy/simple/launch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(params)
                 });
                 const data = await response.json();
-                showAlert(data.success ? `✅ Bot ${strategy === 'zscore' ? 'Z-Score' : 'Simple'} lancé !` : '❌ ' + data.error, data.success ? 'success' : 'error');
+                
+                if (data.success) {
+                    localStorage.setItem('activeConfig', JSON.stringify(params));
+                    updateActiveConfig(params);
+                    showAlert('✅ Bot lancé avec succès !', 'success');
+                    // Forcer la mise à jour du statut
+                    setTimeout(checkStatus, 500);
+                } else {
+                    showAlert('❌ Erreur: ' + (data.error || 'Erreur inconnue'), 'error');
+                }
             } catch (error) {
-                showAlert('❌ Erreur de connexion', 'error');
+                console.error('Launch error:', error);
+                showAlert('❌ Erreur de connexion au serveur', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Lancer le bot';
             }
         }
 
+        // STOP BOT
         async function stopBot() {
+            const btn = document.getElementById('btn-stop');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Arrêt...';
+            
             try {
                 const response = await fetch('/api/strategy/stop', { method: 'POST' });
                 const data = await response.json();
-                showAlert(data.success ? '⏹️ Bot arrêté' : '❌ ' + data.error, data.success ? 'success' : 'error');
+                
+                if (data.success) {
+                    localStorage.removeItem('activeConfig');
+                    updateActiveConfig(null);
+                    showAlert('⏹️ Bot arrêté', 'success');
+                    // Forcer la mise à jour du statut
+                    setTimeout(checkStatus, 500);
+                } else {
+                    showAlert('❌ Erreur: ' + (data.error || 'Erreur inconnue'), 'error');
+                }
             } catch (error) {
-                showAlert('❌ Erreur de connexion', 'error');
+                console.error('Stop error:', error);
+                showAlert('❌ Erreur de connexion au serveur', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '⏹️ Arrêter';
             }
         }
 
+        // RESET SESSION
         async function resetSession() {
-            if (!confirm('🔄 Réinitialiser la session?\n\n✅ Archiver les logs\n✅ Reset des stats\n✅ Effacer l\'affichage\n\n⚠️ Le bot continue de tourner !')) {
+            if (!confirm('🔄 Réinitialiser la session?\n\n✅ Archiver les logs\n✅ Reset des stats d\'affichage\n✅ Effacer les logs affichés\n\n⚠️ Le bot continue de tourner !')) {
                 return;
             }
 
@@ -657,29 +651,47 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Reset stats
+                    // Reset stats d'affichage
                     document.getElementById('stat-positions').textContent = '0';
                     document.getElementById('stat-trades').textContent = '0';
                     document.getElementById('stat-entries').textContent = '0';
                     document.getElementById('stat-exits').textContent = '0';
                     document.getElementById('stat-zscore').textContent = '-';
                     
-                    // Clear logs
+                    // Effacer les logs
+                    document.getElementById('logs-critical').innerHTML = '<div class="empty-state">Session réinitialisée</div>';
+                    document.getElementById('logs-all').innerHTML = '<div class="empty-state">Session réinitialisée</div>';
+                    
                     displayedCriticalLogs.clear();
                     displayedAllLogs.clear();
-                    document.getElementById('logs-critical').innerHTML = '<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-text">Session réinitialisée</div><small>En attente de nouveaux événements...</small></div>';
-                    document.getElementById('logs-all').innerHTML = '<div class="empty-state"><div class="empty-icon">✨</div><div class="empty-text">Session réinitialisée</div></div>';
                     
                     showAlert(`✅ Session réinitialisée! ${data.archived_logs || 0} fichiers archivés.`, 'success');
                 } else {
-                    showAlert('❌ ' + (data.error || 'Erreur'), 'error');
+                    showAlert('❌ Erreur: ' + (data.error || 'Erreur inconnue'), 'error');
                 }
             } catch (error) {
+                console.error('Reset error:', error);
                 showAlert('❌ Erreur de connexion', 'error');
             }
         }
 
-        // STATUS CHECK
+        // UPDATE ACTIVE CONFIG
+        function updateActiveConfig(config) {
+            const activeConfigDiv = document.getElementById('active-config');
+            if (config) {
+                document.getElementById('config-token').textContent = config.token;
+                document.getElementById('config-margin').textContent = '$' + config.margin;
+                document.getElementById('config-leverage').textContent = config.leverage + 'x';
+                document.getElementById('config-entry').textContent = '$' + config.entry_spread;
+                document.getElementById('config-exit').textContent = '$' + config.exit_spread;
+                document.getElementById('config-hold').textContent = config.min_hold_time + 's';
+                activeConfigDiv.style.display = 'block';
+            } else {
+                activeConfigDiv.style.display = 'none';
+            }
+        }
+
+        // CHECK STATUS
         async function checkStatus() {
             try {
                 const response = await fetch('/api/strategy-status');
@@ -689,29 +701,23 @@
                 if (data.running) {
                     badge.className = 'status-badge status-running';
                     badge.textContent = '✅ Bot actif';
+                    
+                    // Restaurer la config active
+                    const savedConfig = localStorage.getItem('activeConfig');
+                    if (savedConfig) {
+                        updateActiveConfig(JSON.parse(savedConfig));
+                    }
                 } else {
                     badge.className = 'status-badge status-stopped';
                     badge.textContent = '⏸️ Bot arrêté';
+                    updateActiveConfig(null);
                 }
             } catch (error) {
                 console.error('Status check error:', error);
             }
         }
 
-        // LOGS POLLING
-        function startLogsPolling() {
-            if (logsPolling) clearInterval(logsPolling);
-            fetchLogs();
-            logsPolling = setInterval(fetchLogs, 1000);
-        }
-
-        function stopLogsPolling() {
-            if (logsPolling) {
-                clearInterval(logsPolling);
-                logsPolling = null;
-            }
-        }
-
+        // FETCH LOGS
         async function fetchLogs() {
             try {
                 const response = await fetch('/api/logs-strategy?t=' + Date.now());
@@ -734,21 +740,24 @@
                     document.getElementById('stat-zscore').textContent = '-';
                 }
                 
-                // Update CRITICAL logs
+                // Update logs
                 if (data.critical_logs && data.critical_logs.length > 0) {
                     updateLogsContainer('logs-critical', data.critical_logs, displayedCriticalLogs, true);
                 }
                 
-                // Update ALL logs
                 if (data.all_logs && data.all_logs.length > 0) {
                     updateLogsContainer('logs-all', data.all_logs, displayedAllLogs, false);
                 }
+                
+                // Update positions
+                await fetchPositions();
                 
             } catch (error) {
                 console.error('Logs fetch error:', error);
             }
         }
 
+        // UPDATE LOGS CONTAINER
         function updateLogsContainer(containerId, logs, displayedSet, isCritical) {
             const container = document.getElementById(containerId);
             
@@ -787,23 +796,85 @@
             }
         }
 
+        // CLASSIFY LOG
         function classifyLog(log, isCritical) {
             if (isCritical) {
-                // Classify critical logs with strong highlighting
                 if (log.includes('BOT D\'ARBITRAGE') || log.includes('🤖')) return 'log-bot-start';
                 if (log.includes('TRADES EXÉCUTÉS') || log.includes('✅')) return 'log-trade-open';
                 if (log.includes('POSITION FERMÉE') || log.includes('📉')) return 'log-trade-close';
-                if (log.includes('PnL:') && parseFloat(log.match(/PnL:\s*([+-]?\d+\.?\d*)/)?.[1] || 0) > 0) return 'log-pnl-positive';
-                if (log.includes('PnL:') && parseFloat(log.match(/PnL:\s*([+-]?\d+\.?\d*)/)?.[1] || 0) < 0) return 'log-pnl-negative';
+                return 'log-info';
             } else {
-                // Classify all logs with subtle highlighting
                 if (log.includes('ERROR') || log.includes('❌')) return 'log-error';
                 if (log.includes('WARNING') || log.includes('⚠️')) return 'log-warning';
+                return 'log-info';
             }
-            return 'log-info';
         }
 
-        // ALERTS
+        // FETCH POSITIONS
+        async function fetchPositions() {
+            try {
+                const response = await fetch('/api/health?t=' + Date.now());
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                
+                // Update Lighter positions
+                const lighterContainer = document.getElementById('lighter-positions');
+                if (data.lighter && data.lighter.positions && data.lighter.positions.length > 0) {
+                    lighterContainer.innerHTML = data.lighter.positions.map(pos => {
+                        const size = parseFloat(pos.position || pos.size || pos.base_amount || 0);
+                        const direction = size > 0 ? '🟢 LONG' : '🔴 SHORT';
+                        const color = size > 0 ? 'var(--success)' : 'var(--danger)';
+                        return `
+                            <div style="margin-bottom: 8px; padding: 8px; background: var(--dark); border-radius: 6px;">
+                                <div style="font-weight: 600; color: ${color};">${direction}</div>
+                                <div>Size: ${Math.abs(size).toFixed(4)} BTC</div>
+                                ${pos.entry_price ? `<div>Entry: $${parseFloat(pos.entry_price).toFixed(2)}</div>` : ''}
+                                ${pos.liquidation_price ? `<div style="color: var(--warning);">Liq: $${parseFloat(pos.liquidation_price).toFixed(2)}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    lighterContainer.innerHTML = '<div style="color: var(--text-muted);">Aucune position</div>';
+                }
+                
+                // Update Paradex positions
+                const paradexContainer = document.getElementById('paradex-positions');
+                if (data.paradex && data.paradex.positions && data.paradex.positions.length > 0) {
+                    paradexContainer.innerHTML = data.paradex.positions.map(pos => {
+                        const size = parseFloat(pos.size || 0);
+                        const direction = size > 0 ? '🟢 LONG' : '🔴 SHORT';
+                        const color = size > 0 ? 'var(--success)' : 'var(--danger)';
+                        return `
+                            <div style="margin-bottom: 8px; padding: 8px; background: var(--dark); border-radius: 6px;">
+                                <div style="font-weight: 600; color: ${color};">${direction}</div>
+                                <div>Size: ${Math.abs(size).toFixed(4)} ${pos.market ? pos.market.split('-')[0] : 'BTC'}</div>
+                                ${pos.avg_entry_price ? `<div>Entry: $${parseFloat(pos.avg_entry_price).toFixed(2)}</div>` : ''}
+                                ${pos.liquidation_price ? `<div style="color: var(--warning);">Liq: $${parseFloat(pos.liquidation_price).toFixed(2)}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    paradexContainer.innerHTML = '<div style="color: var(--text-muted);">Aucune position</div>';
+                }
+                
+            } catch (error) {
+                console.error('Positions fetch error:', error);
+            }
+        }
+
+        // SWITCH TAB
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+
+        // SHOW ALERT
         function showAlert(message, type = 'info') {
             const alert = document.createElement('div');
             alert.className = `alert alert-${type}`;
@@ -811,11 +882,21 @@
             document.body.appendChild(alert);
             
             setTimeout(() => {
-                alert.style.animation = 'slideIn 0.3s ease reverse';
-                setTimeout(() => alert.remove(), 300);
-            }, 3000);
+                alert.remove();
+            }, 5000);
         }
+
+        // START LOGS POLLING
+        function startLogsPolling() {
+            if (logsPolling) clearInterval(logsPolling);
+            fetchLogs();
+            logsPolling = setInterval(fetchLogs, 1000);
+        }
+
+        // INIT
+        checkStatus();
+        startLogsPolling();
+        setInterval(checkStatus, 5000);
     </script>
 </body>
 </html>
-

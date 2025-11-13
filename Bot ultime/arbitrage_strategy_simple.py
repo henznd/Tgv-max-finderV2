@@ -28,7 +28,7 @@ class StrategyParamsSimple:
     exit_spread: float = 5.0    # Spread maximum pour sortir (en $)
     min_duration_s: int = 4     # Durée minimale de confirmation du signal (en secondes)
     min_hold_time: int = 10     # Durée minimale de détention de la position (en secondes) - ex: 10s = position ouverte au moins 10 secondes
-    max_hold: int = 240         # Durée maximale de position (en secondes) - ex: 240s = 4 minutes max
+    max_hold: int = 999999      # Durée maximale de position (en secondes) - DÉSACTIVÉ (999999s = ~11 jours)
 
 
 @dataclass
@@ -291,14 +291,27 @@ class ArbitrageStrategySimple:
             paradex_ask: Ask Paradex
             timestamp: Timestamp actuel
         """
-        # Calculer le spread et la direction
+        # Calculer le spread et la direction pour l'entrée
         spread, direction = self.calculate_spread(lighter_bid, lighter_ask, paradex_bid, paradex_ask)
         
         # Vérifier sortie de position
         if self.current_position is not None:
-            should_exit, reason = self.should_exit_position(spread, timestamp)
+            # Pour la sortie, calculer le spread dans la DIRECTION OPPOSÉE à l'entrée
+            # (c'est-à-dire le coût pour fermer la position)
+            if self.current_position.direction == 'sell_lighter':
+                # On avait vendu Lighter et acheté Paradex
+                # Pour fermer: acheter Lighter et vendre Paradex
+                # Coût de fermeture: paradex_bid - lighter_ask (on reçoit paradex_bid, on paye lighter_ask)
+                exit_spread = paradex_bid - lighter_ask
+            else:  # sell_paradex
+                # On avait vendu Paradex et acheté Lighter
+                # Pour fermer: vendre Lighter et acheter Paradex
+                # Coût de fermeture: lighter_bid - paradex_ask (on reçoit lighter_bid, on paye paradex_ask)
+                exit_spread = lighter_bid - paradex_ask
+            
+            should_exit, reason = self.should_exit_position(exit_spread, timestamp)
             if should_exit:
-                self.exit_position(spread, timestamp, reason)
+                self.exit_position(exit_spread, timestamp, reason)
         
         # Vérifier entrée en position
         if self.current_position is None:

@@ -347,45 +347,55 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             self.send_json_response({"error": str(e)}, status=500)
     
     def stop_strategy_bot(self):
-        """Arrête le bot stratégie"""
-        global strategy_bot_running, strategy_bot_process
+        """Arrête tous les bots (Z-score et Simple)"""
+        global strategy_bot_running, strategy_bot_process, simple_bot_running, simple_bot_process
         
-        if not strategy_bot_running:
-            self.send_json_response({"error": "Le bot stratégie n'est pas en cours d'exécution"}, status=400)
+        if not strategy_bot_running and not simple_bot_running:
+            self.send_json_response({"error": "Aucun bot n'est en cours d'exécution"}, status=400)
             return
         
         try:
-            strategy_bot_running = False
+            # Forcer l'arrêt IMMÉDIAT via pkill -9 (plus rapide)
+            logger.info("🛑 Arrêt forcé de tous les bots...")
+            subprocess.run(['pkill', '-9', '-f', 'arbitrage_bot_strategy.py'], 
+                         capture_output=True, timeout=2)
+            subprocess.run(['pkill', '-9', '-f', 'arbitrage_bot_simple.py'], 
+                         capture_output=True, timeout=2)
             
-            # Arrêter le processus si il existe
+            # Mettre à jour les flags
+            strategy_bot_running = False
+            simple_bot_running = False
+            
+            # Nettoyer les références
             if strategy_bot_process:
                 try:
-                    strategy_bot_process.terminate()
-                    strategy_bot_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
                     strategy_bot_process.kill()
-                except Exception as e:
-                    logger.warning(f"Erreur lors de l'arrêt du processus: {e}")
+                except:
+                    pass
                 strategy_bot_process = None
             
-            # Aussi tuer le processus via pkill au cas où
-            try:
-                subprocess.run(['pkill', '-f', 'arbitrage_bot_strategy.py'], 
-                             capture_output=True, timeout=5)
-            except:
-                pass
+            if simple_bot_process:
+                try:
+                    simple_bot_process.kill()
+                except:
+                    pass
+                simple_bot_process = None
             
-            logger.info("Arrêt du bot stratégie demandé")
-            self.send_json_response({"success": True, "message": "Arrêt du bot stratégie demandé"})
+            logger.info("✅ Tous les bots arrêtés")
+            self.send_json_response({"success": True, "message": "Tous les bots ont été arrêtés"})
         except Exception as e:
             logger.error(f"Erreur lors de l'arrêt du bot stratégie: {e}")
             self.send_json_response({"error": str(e)}, status=500)
     
     def get_strategy_status(self):
-        """Récupère le statut du bot stratégie"""
-        global strategy_bot_running
+        """Récupère le statut du bot stratégie (Z-score ou Simple)"""
+        global strategy_bot_running, simple_bot_running
+        # Le bot est actif si l'un des deux tourne
+        is_running = strategy_bot_running or simple_bot_running
         self.send_json_response({
-            "running": strategy_bot_running,
+            "running": is_running,
+            "strategy_running": strategy_bot_running,
+            "simple_running": simple_bot_running,
             "timestamp": datetime.now().isoformat()
         })
     
@@ -477,7 +487,11 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
             )
             simple_bot_thread.start()
             
-            logger.info(f"Bot simple lancé avec paramètres: {params}")
+            # Petit délai pour laisser le bot démarrer
+            import time
+            time.sleep(0.5)
+            
+            logger.info(f"✅ Bot simple lancé avec paramètres: {params}")
             self.send_json_response({"success": True, "message": "Bot simple lancé avec succès"})
         except Exception as e:
             simple_bot_running = False
@@ -535,8 +549,10 @@ class ArbitrageBotHandler(BaseHTTPRequestHandler):
                 })
                 return
             
-            # Chercher les fichiers de log du bot stratégie
-            log_files = sorted(glob.glob(os.path.join(log_dir, 'arbitrage_bot_strategy_*.log')), reverse=True)
+            # Chercher les fichiers de log (simple ET strategy)
+            log_files_simple = glob.glob(os.path.join(log_dir, 'arbitrage_bot_simple_*.log'))
+            log_files_strategy = glob.glob(os.path.join(log_dir, 'arbitrage_bot_strategy_*.log'))
+            log_files = sorted(log_files_simple + log_files_strategy, key=os.path.getmtime, reverse=True)
             
             if not log_files:
                 self.send_json_response({

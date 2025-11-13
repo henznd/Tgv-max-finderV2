@@ -1,29 +1,24 @@
+# Environment variables
+.env
+.env.local
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
 venv/
+env/
 ENV/
-.venv
 
 # Logs
 logs/
 *.log
-collect.log
 
-# Data
-data/
-*.json
-!trading_config.json
-!package.json
-!package-lock.json
-
-# Node
-node_modules/
-npm-debug.log*
+# Config files with sensitive data
+trading_config.json
+trading_config_temp.json
 
 # IDE
 .vscode/
@@ -35,14 +30,3 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
-
-# Temporary files
-*.tmp
-*.temp
-*_temp.json
-*_temp.py
-
-# Supabase
-.supabase/
-
-

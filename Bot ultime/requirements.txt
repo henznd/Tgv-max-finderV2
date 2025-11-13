@@ -1,4 +1,4 @@
-# Dependencies for Lighter DEX (Python 3.9)
+# Dependencies for Lighter DEX (Python 3.9+)
 lighter-sdk
 aiohttp
 
@@ -8,3 +8,9 @@ starknet-py
 
 # Dependencies communes
 supabase
+psycopg2-binary
+python-dotenv
+numpy
+
+# Web server
+# (http.server is built-in)
