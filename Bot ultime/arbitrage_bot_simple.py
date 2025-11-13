@@ -88,24 +88,32 @@ async def close_positions_simple(token: str, config_base: dict, margin: float, l
     """
     from arbitrage_bot_strategy import close_positions
     
-    # Récupérer les prix actuels
-    lighter_prices = await get_lighter_price_direct(token)
-    paradex_prices = await get_paradex_price_direct(token)
+    # Récupérer les prix bid et ask actuels
+    lighter_bid, lighter_ask, paradex_bid, paradex_ask = await asyncio.gather(
+        get_lighter_price_direct(token, "sell"),  # bid
+        get_lighter_price_direct(token, "buy"),   # ask
+        get_paradex_price_direct(token, "sell"),  # bid
+        get_paradex_price_direct(token, "buy")    # ask
+    )
     
-    if not lighter_prices or not paradex_prices:
+    if not all([lighter_bid, lighter_ask, paradex_bid, paradex_ask]):
         logger.error("❌ Impossible de récupérer les prix pour fermer les positions")
         return {"success": False, "error": "Prix non disponibles"}
+    
+    # Calculer mid prices
+    lighter_mid = (lighter_bid + lighter_ask) / 2
+    paradex_mid = (paradex_bid + paradex_ask) / 2
     
     # Appeler la fonction de fermeture existante
     return await close_positions(
         token=token,
         config_base=config_base,
-        lighter_bid=lighter_prices['bid'],
-        lighter_ask=lighter_prices['ask'],
-        lighter_mid=lighter_prices['mid'],
-        paradex_bid=paradex_prices['bid'],
-        paradex_ask=paradex_prices['ask'],
-        paradex_mid=paradex_prices['mid'],
+        lighter_bid=lighter_bid,
+        lighter_ask=lighter_ask,
+        lighter_mid=lighter_mid,
+        paradex_bid=paradex_bid,
+        paradex_ask=paradex_ask,
+        paradex_mid=paradex_mid,
         leverage=leverage
     )
 
@@ -260,34 +268,42 @@ async def run_strategy_loop(token: str, margin: float, leverage: int,
             tick_count += 1
             current_time = datetime.now()
             
-            # 1. Récupérer les prix en temps réel
-            lighter_prices_task = asyncio.create_task(get_lighter_price_direct(token))
-            paradex_prices_task = asyncio.create_task(get_paradex_price_direct(token))
+            # 1. Récupérer les prix bid et ask en temps réel (en parallèle)
+            lighter_bid_task = asyncio.create_task(get_lighter_price_direct(token, "sell"))  # bid = prix de vente
+            lighter_ask_task = asyncio.create_task(get_lighter_price_direct(token, "buy"))   # ask = prix d'achat
+            paradex_bid_task = asyncio.create_task(get_paradex_price_direct(token, "sell"))  # bid = prix de vente
+            paradex_ask_task = asyncio.create_task(get_paradex_price_direct(token, "buy"))   # ask = prix d'achat
             
-            lighter_prices, paradex_prices = await asyncio.gather(lighter_prices_task, paradex_prices_task)
+            lighter_bid, lighter_ask, paradex_bid, paradex_ask = await asyncio.gather(
+                lighter_bid_task, lighter_ask_task, paradex_bid_task, paradex_ask_task
+            )
             
-            if not lighter_prices or not paradex_prices:
+            if not all([lighter_bid, lighter_ask, paradex_bid, paradex_ask]):
                 logger.warning(f"⚠️ Prix non disponibles, attente 3 secondes...")
                 await asyncio.sleep(3)
                 continue
             
+            # Calculer mid prices
+            lighter_mid = (lighter_bid + lighter_ask) / 2
+            paradex_mid = (paradex_bid + paradex_ask) / 2
+            
             # 2. Traiter le tick avec la stratégie
             strategy.process_tick(
-                lighter_bid=lighter_prices['bid'],
-                lighter_ask=lighter_prices['ask'],
-                paradex_bid=paradex_prices['bid'],
-                paradex_ask=paradex_prices['ask'],
+                lighter_bid=lighter_bid,
+                lighter_ask=lighter_ask,
+                paradex_bid=paradex_bid,
+                paradex_ask=paradex_ask,
                 timestamp=current_time
             )
             
             # 3. Calculer le spread actuel pour l'affichage
-            spread_sell_lighter = lighter_prices['bid'] - paradex_prices['ask']
-            spread_sell_paradex = paradex_prices['bid'] - lighter_prices['ask']
+            spread_sell_lighter = lighter_bid - paradex_ask
+            spread_sell_paradex = paradex_bid - lighter_ask
             spread_max = max(spread_sell_lighter, spread_sell_paradex)
             direction = 'sell_lighter' if spread_sell_lighter > spread_sell_paradex else 'sell_paradex'
             
             # 4. Log périodique
-            logger.info(f"⏱️  Tick {tick_count} | Spread: ${spread_max:.2f} ({direction}) | Lighter: ${lighter_prices['mid']:.2f} | Paradex: ${paradex_prices['mid']:.2f}")
+            logger.info(f"⏱️  Tick {tick_count} | Spread: ${spread_max:.2f} ({direction}) | Lighter: ${lighter_mid:.2f} | Paradex: ${paradex_mid:.2f}")
             
             # 5. Gérer l'entrée en position
             if strategy.current_position and strategy.current_position.status == 'open':
@@ -305,10 +321,10 @@ async def run_strategy_loop(token: str, margin: float, leverage: int,
                         token=token,
                         margin=margin,
                         leverage=leverage,
-                        lighter_bid=lighter_prices['bid'],
-                        lighter_ask=lighter_prices['ask'],
-                        paradex_bid=paradex_prices['bid'],
-                        paradex_ask=paradex_prices['ask']
+                        lighter_bid=lighter_bid,
+                        lighter_ask=lighter_ask,
+                        paradex_bid=paradex_bid,
+                        paradex_ask=paradex_ask
                     )
                     
                     if not result.get("success"):
@@ -338,10 +354,10 @@ async def run_strategy_loop(token: str, margin: float, leverage: int,
                             token=token,
                             margin=margin,
                             leverage=leverage,
-                            lighter_bid=lighter_prices['bid'],
-                            lighter_ask=lighter_prices['ask'],
-                            paradex_bid=paradex_prices['bid'],
-                            paradex_ask=paradex_prices['ask']
+                            lighter_bid=lighter_bid,
+                            lighter_ask=lighter_ask,
+                            paradex_bid=paradex_bid,
+                            paradex_ask=paradex_ask
                         )
                         
                         if not result.get("success"):
